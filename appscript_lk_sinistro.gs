@@ -1,44 +1,45 @@
 /**
  * Script para gerar abas analíticas (LK_US_BASE, LK_US_API, LK_US_TIMES, LK_SNAPSHOT)
- * a partir da aba "WBS Project" da planilha de Workflow / FTR Sinistro.
+ * a partir da aba "WBS Project" (ou alternativa) da planilha de Workflow / FTR Sinistro.
  *
- * Cole este código em:
- *  Extensões → Apps Script, na própria planilha de especificação.
- *
- * Ajuste apenas a seção de CONFIGURAÇÃO se os nomes de abas/colunas forem diferentes.
+ * Suporta múltiplos nomes de coluna (ex.: ID_US ou US Original, Data_Fim_Plan ou Data_Fim_Planejada).
+ * Se Outline Level não existir, considera todas as linhas com ID_US/WBS.
+ * Etapa/Processo derivados do WBS quando colunas vazias. LK_US_API e LK_US_TIMES
+ * recebem ao menos uma linha por US (N/A quando sem APIs/Times).
  */
 
 /*************** CONFIGURAÇÃO BÁSICA ***************/
 
-// Nome da aba de origem principal (WBS Project)
+// Aba de origem: deve ter ao menos coluna ID (US Original ou ID_US) e de preferência WBS.
+// Se seus dados estiverem em outra aba (ex.: EF Funcionalidades RSI), altere aqui.
 const SHEET_WBS_PROJECT = 'WBS Project';
 
-// Abas de destino (serão criadas/limpas e recriadas)
+// Abas de destino
 const SHEET_LK_US_BASE  = 'LK_US_BASE';
 const SHEET_LK_US_API   = 'LK_US_API';
 const SHEET_LK_US_TIMES = 'LK_US_TIMES';
-const SHEET_LK_SNAPSHOT = 'LK_SNAPSHOT'; // só é append, não limpa tudo
+const SHEET_LK_SNAPSHOT = 'LK_SNAPSHOT';
 
-// Nomes exatos das COLUNAS na aba WBS Project (linha 1)
-const COL_OUTLINE_LEVEL = 'Outline Level';
-const COL_TASK_NAME     = 'Task Name';
-const COL_WBS           = 'WBS';
-const COL_US_ORIGINAL   = 'US Original';     // vira ID_US
-const COL_ETAPA         = 'Etapa';           // se não existir, pode ser calculado por hierarquia
-const COL_PROCESSO      = 'Processo';        // idem
-const COL_REGRA         = 'Regra';           // opcional
-const COL_FUNC          = 'Funcionalidade';  // opcional
-const COL_DURACAO       = 'Duracao_Dias';
-const COL_PRODUTO       = 'Produto';
-const COL_SIST_LEGADOS  = 'Sistemas_Legados';
-const COL_APIS          = 'APIs';            // coluna com lista: "API-01, API-13"
-const COL_TIMES         = 'Times';           // coluna com lista: "GEFEP, GETIV"
-const COL_STATUS        = 'Status';
-const COL_PCT_REAL      = 'Pct_Realizado';
-const COL_DT_INI_PLAN   = 'Data_Inicio_Planejada';
-const COL_DT_FIM_PLAN   = 'Data_Fim_Planejada';
-const COL_DT_FIM_REAL   = 'Data_Fim_Real';
-const COL_RESP          = 'Responsavel';
+// Nomes possíveis das COLUNAS (primeiro que existir na planilha será usado)
+const COL_ID_US_ALT     = ['US Original', 'ID_US'];
+const COL_OUTLINE_ALT   = ['Outline Level'];
+const COL_WBS_ALT       = ['WBS'];
+const COL_TASK_ALT      = ['Task Name', 'Funcionalidade'];
+const COL_ETAPA_ALT     = ['Etapa'];
+const COL_PROCESSO_ALT  = ['Processo'];
+const COL_REGRA_ALT     = ['Regra'];
+const COL_FUNC_ALT      = ['Funcionalidade', 'Task Name'];
+const COL_DURACAO_ALT   = ['Duracao_Dias', 'Duracao'];
+const COL_PRODUTO_ALT   = ['Produto'];
+const COL_SIST_LEGADOS_ALT = ['Sistemas_Legados'];
+const COL_APIS_ALT      = ['APIs', 'API'];
+const COL_TIMES_ALT     = ['Times', 'Times_Envolvidos', 'Qtd_Times_Interacao'];
+const COL_STATUS_ALT    = ['Status', 'Status_Interacao'];
+const COL_PCT_ALT       = ['Pct_Realizado'];
+const COL_DT_INI_ALT    = ['Data_Inicio_Planejada', 'Data_Inicio_Plan'];
+const COL_DT_FIM_ALT    = ['Data_Fim_Planejada', 'Data_Fim_Plan'];
+const COL_DT_FIM_REAL_ALT = ['Data_Fim_Real'];
+const COL_RESP_ALT      = ['Responsavel'];
 
 
 /*************** FUNÇÕES PRINCIPAIS ***************/
@@ -66,46 +67,61 @@ function atualizarBasesLK() {
     throw new Error('Aba "' + SHEET_WBS_PROJECT + '" não tem dados suficientes.');
   }
 
-  const header = data[0];
+  const header = data[0].map(function(h) { return String(h || '').trim(); });
   const rows = data.slice(1);
 
-  // Mapeia índice de cada coluna pelo nome
+  // Mapeia índice de cada coluna pelo nome (case-sensitive match)
   const colIndex = {};
-  header.forEach((name, i) => {
-    colIndex[name] = i;
+  header.forEach(function(name, i) {
+    if (name) colIndex[name] = i;
   });
 
-  function idx(colName) {
-    if (!(colName in colIndex)) return -1;
-    return colIndex[colName];
+  function idxFirst(altNames) {
+    for (var a = 0; a < altNames.length; a++) {
+      if (colIndex[altNames[a]] !== undefined) return colIndex[altNames[a]];
+    }
+    return -1;
   }
 
-  const iOutline = idx(COL_OUTLINE_LEVEL);
-  const iTask    = idx(COL_TASK_NAME);
-  const iWbs     = idx(COL_WBS);
-  const iUsOrig  = idx(COL_US_ORIGINAL);
-  const iEtapa   = idx(COL_ETAPA);
-  const iProc    = idx(COL_PROCESSO);
-  const iRegra   = idx(COL_REGRA);
-  const iFunc    = idx(COL_FUNC);
-  const iDur     = idx(COL_DURACAO);
-  const iProd    = idx(COL_PRODUTO);
-  const iSist    = idx(COL_SIST_LEGADOS);
-  const iApis    = idx(COL_APIS);
-  const iTimes   = idx(COL_TIMES);
-  const iStatus  = idx(COL_STATUS);
-  const iPct     = idx(COL_PCT_REAL);
-  const iDtIni   = idx(COL_DT_INI_PLAN);
-  const iDtFimP  = idx(COL_DT_FIM_PLAN);
-  const iDtFimR  = idx(COL_DT_FIM_REAL);
-  const iResp    = idx(COL_RESP);
+  const iOutline = idxFirst(COL_OUTLINE_ALT);
+  const iTask    = idxFirst(COL_TASK_ALT);
+  const iWbs     = idxFirst(COL_WBS_ALT);
+  const iUsOrig  = idxFirst(COL_ID_US_ALT);
+  const iEtapa   = idxFirst(COL_ETAPA_ALT);
+  const iProc    = idxFirst(COL_PROCESSO_ALT);
+  const iRegra   = idxFirst(COL_REGRA_ALT);
+  const iFunc    = idxFirst(COL_FUNC_ALT);
+  const iDur     = idxFirst(COL_DURACAO_ALT);
+  const iProd    = idxFirst(COL_PRODUTO_ALT);
+  const iSist    = idxFirst(COL_SIST_LEGADOS_ALT);
+  const iApis    = idxFirst(COL_APIS_ALT);
+  const iTimes   = idxFirst(COL_TIMES_ALT);
+  const iStatus  = idxFirst(COL_STATUS_ALT);
+  const iPct     = idxFirst(COL_PCT_ALT);
+  const iDtIni   = idxFirst(COL_DT_INI_ALT);
+  const iDtFimP  = idxFirst(COL_DT_FIM_ALT);
+  const iDtFimR  = idxFirst(COL_DT_FIM_REAL_ALT);
+  const iResp    = idxFirst(COL_RESP_ALT);
 
-  if (iOutline === -1 || iUsOrig === -1) {
+  if (iUsOrig === -1) {
     throw new Error(
-      'Certifique-se de ter pelo menos as colunas "' +
-      COL_OUTLINE_LEVEL + '" e "' + COL_US_ORIGINAL +
-      '" na aba "' + SHEET_WBS_PROJECT + '".'
+      'Na aba "' + SHEET_WBS_PROJECT + '" não foi encontrada nenhuma coluna de ID: ' +
+      COL_ID_US_ALT.join(' ou ') + '. Verifique o cabeçalho da linha 1.'
     );
+  }
+
+  // Deriva Etapa e Processo a partir do WBS (ex.: "1.1.1.1" -> Etapa "1", Processo "1.1")
+  function derivarEtapaProcesso(wbsStr) {
+    var w = String(wbsStr || '').trim();
+    if (!w) return { etapa: '', processo: '' };
+    var partes = w.split(/\./).filter(Boolean);
+    if (partes.length >= 1) {
+      return {
+        etapa: partes[0],
+        processo: partes.length >= 2 ? partes[0] + '.' + partes[1] : partes[0]
+      };
+    }
+    return { etapa: '', processo: '' };
   }
 
   // =================== Monta LK_US_BASE ===================
@@ -132,40 +148,61 @@ function atualizarBasesLK() {
 
   const baseRows = [];
 
-  rows.forEach(row => {
-    const outlineLevel = row[iOutline];
-    if (String(outlineLevel).trim() !== '4') {
-      // Só pega US (nível 4)
-      return;
+  rows.forEach(function(row) {
+    // Se existir coluna Outline Level, filtrar só nível 4; senão incluir todas as linhas com ID
+    if (iOutline >= 0) {
+      var level = String(row[iOutline] || '').trim();
+      if (level !== '4' && level !== 4) return;
     }
 
-    const idUs = iUsOrig >= 0 ? row[iUsOrig] : '';
+    var idUs = iUsOrig >= 0 ? (row[iUsOrig] != null ? String(row[iUsOrig]).trim() : '') : '';
     if (!idUs) return;
 
-    const wbs        = iWbs    >= 0 ? row[iWbs]    : '';
-    const etapa      = iEtapa  >= 0 ? row[iEtapa]  : '';
-    const processo   = iProc   >= 0 ? row[iProc]   : '';
-    const regra      = iRegra  >= 0 ? row[iRegra]  : '';
-    const func       = iFunc   >= 0 ? row[iFunc]   : (iTask >= 0 ? row[iTask] : '');
-    const duracao    = iDur    >= 0 ? row[iDur]    : '';
-    const produto    = iProd   >= 0 ? row[iProd]   : '';
-    const sistLeg    = iSist   >= 0 ? row[iSist]   : '';
-    const apisCell   = iApis   >= 0 ? row[iApis]   : '';
-    const timesCell  = iTimes  >= 0 ? row[iTimes]  : '';
-    const status     = iStatus >= 0 ? row[iStatus] : '';
-    const pct        = iPct    >= 0 ? row[iPct]    : '';
-    const dtIni      = iDtIni  >= 0 ? row[iDtIni]  : '';
-    const dtFimPlan  = iDtFimP >= 0 ? row[iDtFimP] : '';
-    const dtFimReal  = iDtFimR >= 0 ? row[iDtFimR] : '';
-    const resp       = iResp   >= 0 ? row[iResp]   : '';
+    var wbs     = iWbs   >= 0 ? (row[iWbs] != null ? row[iWbs] : '') : '';
+    var dp      = derivarEtapaProcesso(wbs);
+    var etapa   = (iEtapa >= 0 && row[iEtapa] != null && String(row[iEtapa]).trim() !== '')
+      ? row[iEtapa] : dp.etapa;
+    var processo = (iProc >= 0 && row[iProc] != null && String(row[iProc]).trim() !== '')
+      ? row[iProc] : dp.processo;
+    var regra   = iRegra >= 0 ? row[iRegra] : '';
+    var func    = (iFunc >= 0 ? row[iFunc] : (iTask >= 0 ? row[iTask] : ''));
+    var duracao = iDur   >= 0 ? row[iDur] : '';
+    var produto = iProd  >= 0 ? row[iProd] : '';
+    var sistLeg = iSist  >= 0 ? row[iSist] : '';
+    var apisCell  = iApis  >= 0 ? row[iApis] : '';
+    var timesCell = iTimes >= 0 ? row[iTimes] : '';
+    var status  = iStatus >= 0 ? row[iStatus] : '';
+    var pct     = iPct    >= 0 ? row[iPct] : '';
+    var dtIni   = iDtIni  >= 0 ? row[iDtIni] : '';
+    var dtFimPlan = iDtFimP >= 0 ? row[iDtFimP] : '';
+    var dtFimReal = iDtFimR >= 0 ? row[iDtFimR] : '';
+    var resp    = iResp   >= 0 ? row[iResp] : '';
 
-    const qtdApis = apisCell
-      ? String(apisCell).split(',').filter(s => s.trim()).length
-      : 0;
-    const qtdTimes = timesCell
-      ? String(timesCell).split(',').filter(s => s.trim()).length
-      : 0;
-    const temInter = qtdTimes > 1 ? 1 : 0;
+    var apisStrVal = apisCell != null ? String(apisCell).trim() : '';
+    var listApisVal = [];
+    if (apisStrVal !== '') {
+      if (/^\d+$/.test(apisStrVal)) {
+        listApisVal = [];
+      } else {
+        listApisVal = apisStrVal.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+      }
+    }
+    var qtdApis = listApisVal.length;
+    if (apisStrVal !== '' && /^\d+$/.test(apisStrVal)) qtdApis = parseInt(apisStrVal, 10) || 0;
+
+    var timesStrVal = timesCell != null ? String(timesCell).trim() : '';
+    var listTimesVal = [];
+    if (timesStrVal !== '') {
+      if (/^\d+$/.test(timesStrVal)) {
+        listTimesVal = [];
+      } else {
+        listTimesVal = timesStrVal.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+      }
+    }
+    var qtdTimes = listTimesVal.length;
+    if (timesStrVal !== '' && /^\d+$/.test(timesStrVal)) qtdTimes = parseInt(timesStrVal, 10) || 0;
+
+    var temInter = qtdTimes > 1 ? 1 : 0;
 
     baseRows.push([
       idUs,
@@ -203,32 +240,28 @@ function atualizarBasesLK() {
   ];
   const apiRows = [];
 
-  baseRows.forEach(r => {
-    const idUs   = r[0];
-    const etapa  = r[2];
-    const proc   = r[3];
-    const func   = r[5];
-    const status = r[12];
-    const pct    = r[13];
+  baseRows.forEach(function(r) {
+    var idUs   = r[0];
+    var etapa  = r[2];
+    var proc   = r[3];
+    var func   = r[5];
+    var status = r[12];
+    var pct    = r[13];
 
-    const origRow = encontrarLinhaPorIdUs(rows, iUsOrig, idUs);
-    if (!origRow || iApis < 0) return;
-    const apisCell = origRow[iApis];
-    if (!apisCell) return;
-
-    String(apisCell).split(',').forEach(api => {
-      const limp = api.trim();
-      if (!limp) return;
-      apiRows.push([
-        idUs,
-        etapa,
-        proc,
-        func,
-        limp,
-        status,
-        pct
-      ]);
-    });
+    var origRow = encontrarLinhaPorIdUs(rows, iUsOrig, idUs);
+    var apisCell = (origRow && iApis >= 0) ? origRow[iApis] : null;
+    var apisStr = apisCell != null ? String(apisCell).trim() : '';
+    var apisList = [];
+    if (apisStr !== '' && !/^\d+$/.test(apisStr)) {
+      apisList = apisStr.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+    }
+    if (apisList.length === 0) {
+      apiRows.push([idUs, etapa, proc, func, 'N/A', status, pct]);
+    } else {
+      apisList.forEach(function(api) {
+        apiRows.push([idUs, etapa, proc, func, api, status, pct]);
+      });
+    }
   });
 
   sobrescreverAba(ss, SHEET_LK_US_API, apiHeader, apiRows);
@@ -244,30 +277,27 @@ function atualizarBasesLK() {
   ];
   const timesRows = [];
 
-  baseRows.forEach(r => {
-    const idUs   = r[0];
-    const etapa  = r[2];
-    const proc   = r[3];
-    const func   = r[5];
-    const status = r[12];
+  baseRows.forEach(function(r) {
+    var idUs   = r[0];
+    var etapa  = r[2];
+    var proc   = r[3];
+    var func   = r[5];
+    var status = r[12];
 
-    const origRow = encontrarLinhaPorIdUs(rows, iUsOrig, idUs);
-    if (!origRow || iTimes < 0) return;
-    const timesCell = origRow[iTimes];
-    if (!timesCell) return;
-
-    String(timesCell).split(',').forEach(t => {
-      const limp = t.trim();
-      if (!limp) return;
-      timesRows.push([
-        idUs,
-        etapa,
-        proc,
-        func,
-        limp,
-        status
-      ]);
-    });
+    var origRow = encontrarLinhaPorIdUs(rows, iUsOrig, idUs);
+    var timesCell = (origRow && iTimes >= 0) ? origRow[iTimes] : null;
+    var timesStr = timesCell != null ? String(timesCell).trim() : '';
+    var timesList = [];
+    if (timesStr !== '' && !/^\d+$/.test(timesStr)) {
+      timesList = timesStr.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+    }
+    if (timesList.length === 0) {
+      timesRows.push([idUs, etapa, proc, func, 'N/A', status]);
+    } else {
+      timesList.forEach(function(t) {
+        timesRows.push([idUs, etapa, proc, func, t, status]);
+      });
+    }
   });
 
   sobrescreverAba(ss, SHEET_LK_US_TIMES, timesHeader, timesRows);
@@ -329,9 +359,11 @@ function tirarSnapshot() {
     snapSheet.appendRow(['Data_Snapshot', 'ID_US', 'Status', 'Pct_Realizado', 'Data_Fim_Planejada']);
   }
 
-  snapSheet
-    .getRange(snapSheet.getLastRow() + 1, 1, snapshotRows.length, snapshotRows[0].length)
-    .setValues(snapshotRows);
+  if (snapshotRows.length > 0) {
+    var startRow = snapSheet.getLastRow() + 1;
+    var numCols = snapshotRows[0].length;
+    snapSheet.getRange(startRow, 1, startRow + snapshotRows.length - 1, numCols).setValues(snapshotRows);
+  }
 }
 
 
