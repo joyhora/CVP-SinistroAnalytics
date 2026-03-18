@@ -253,6 +253,13 @@ function atualizarBasesLK() {
       const vAlt = findFromBaseId_(idUs, mapaVal);
       if (vAlt) v = vAlt;
     }
+    // 3ª tentativa (definitiva): busca "bruta" na aba de Validação
+    // por qualquer célula de IDs que contenha o ID original.
+    if (!v || (!v.Etapa && !v.Processo && !v.Regra)) {
+      const rawId = w.IdOriginal || idUs;
+      const vBruto = findFromValidationRawId_(rawId, valRows, iIds, iEtapa, iProc, iFunc, iRegra, iCob, iApis);
+      if (vBruto) v = vBruto;
+    }
 
     if (!v || !v.Etapa || !v.Processo || !v.Regra) {
       idsNaoMapeados.push([
@@ -387,6 +394,33 @@ function findFromBaseId_(idUs, mapaVal) {
     if (baseK === base) return v;
   }
 
+  return null;
+}
+
+// Busca direta na aba de validação por um ID "como texto",
+// usando o valor original da WBS (sem normalização agressiva).
+function findFromValidationRawId_(rawId, valRows, iIds, iEtapa, iProc, iFunc, iRegra, iCob, iApis) {
+  const alvo = safeTrim_(rawId);
+  if (!alvo) return null;
+
+  for (let r = 0; r < valRows.length; r++) {
+    const row = valRows[r];
+    const idsCell = safeTrim_(row[iIds]);
+    if (!idsCell) continue;
+    // Fazemos a busca textual: se a célula contém exatamente o ID
+    // como palavra isolada ou lista, vamos usar essa linha.
+    const partes = idsCell.split(/[,\n;]+/).map(s => safeTrim_(s)).filter(Boolean);
+    if (partes.includes(alvo)) {
+      return {
+        Etapa: row[iEtapa],
+        Processo: row[iProc],
+        Func: row[iFunc],
+        Regra: iRegra !== undefined ? row[iRegra] : '',
+        Cobertura: safeTrim_(row[iCob]),
+        Apis: iApis !== undefined ? safeTrim_(row[iApis]) : ''
+      };
+    }
+  }
   return null;
 }
 
