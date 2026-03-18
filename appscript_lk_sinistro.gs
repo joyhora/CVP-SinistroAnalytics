@@ -236,9 +236,9 @@ function atualizarBasesLK() {
     let pctReal    = 0;
     let dtFimProj  = '';
 
-    const cob = (v.Cobertura || '').toUpperCase();
-    if (cob.includes('COBERTO') && !cob.includes('SEM')) {
-      statusProj = 'Concluído';
+  const cob = (v.Cobertura || '').toUpperCase();
+  if (cob.includes('COBERTO') && !cob.includes('SEM')) {
+      statusProj = 'Implementado';
       pctReal    = 100;                       // 100%
       dtFimProj  = new Date(2026, 2, 30);     // 30/03/2026 (data de corte)
     } else if (cob.includes('PARCIAL')) {
