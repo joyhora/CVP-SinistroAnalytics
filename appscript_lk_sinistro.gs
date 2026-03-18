@@ -77,10 +77,26 @@ function atualizarBasesLK() {
 
   // ===== 2) Validação Cruzada → explode IDs USs mapeadas =====
   const valData = valSheet.getDataRange().getValues();
-  if (valData.length < 2) throw new Error('Aba "' + SHEET_VALIDACAO + '" não tem dados suficientes.');
+  if (valData.length < 2) {
+    throw new Error('Aba "' + SHEET_VALIDACAO + '" não tem dados suficientes.');
+  }
 
-  const valHeaderIdx = indexByName_(valData[0]);
-  const valRows      = valData.slice(1);
+  // Detecta automaticamente a linha de cabeçalho (onde aparecem Etapa/Processo/Funcionalidade)
+  var headerRowIndex = -1;
+  for (var r = 0; r < Math.min(valData.length, 20); r++) {
+    var rowText = safeTrim_(valData[r].join(' ')).toLowerCase();
+    if (rowText.includes('etapa') && rowText.includes('processo') && rowText.includes('funcionalidade')) {
+      headerRowIndex = r;
+      break;
+    }
+  }
+  if (headerRowIndex === -1) {
+    throw new Error('Não encontrei a linha de cabeçalho na aba "' + SHEET_VALIDACAO +
+      '". Verifique se alguma linha contém \"ETAPA\", \"PROCESSO\" e \"FUNCIONALIDADE\".');
+  }
+
+  const valHeaderIdx = indexByName_(valData[headerRowIndex]);
+  const valRows      = valData.slice(headerRowIndex + 1);
 
   const iEtapa = findColByTokens_(valHeaderIdx, VAL_COL_ETAPA_TOKENS);
   const iProc  = findColByTokens_(valHeaderIdx, VAL_COL_PROCESSO_TOKENS);
