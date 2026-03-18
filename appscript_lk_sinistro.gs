@@ -381,7 +381,13 @@ function indexByName_(headerRow) {
 }
 
 function safeTrim_(v) {
-  return v == null ? '' : String(v).trim();
+  if (v == null) return '';
+  // Converte para string, troca quebras de linha por espaço e
+  // compacta espaços múltiplos em um só.
+  return String(v)
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 // Normalização única para IDs de US, garantindo correspondência exata
