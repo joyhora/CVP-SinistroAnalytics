@@ -383,7 +383,7 @@ function atualizarBasesLK() {
   );
 
   // ===== 4) Montar visão analítica de APIs x Regras =====
-  montarLkApiXRegra_(ss, mapaUsFinal);
+  montarLkApiXRegra_(ss, mapaUsFinal, mapaVal);
 }
 
 
@@ -520,47 +520,13 @@ function escreverAba_(ss, sheetName, header, rows) {
 /**
  * Cria a aba LK_API_X_REGRA com uma linha por combinação API x US/Regra.
  * Depende de:
- *  - SHEET_VALIDACAO_API: contém IDs USs mapeadas e APIs envolvidas
+ *  - mapaVal: contém para cada ID_US a string de APIs envolvidas (Validação Cruzada EF×WBS)
  *  - mapaUsFinal: resumo das informações de cada US já consolidadas em LK_US_BASE
+ *
+ * Ou seja, usamos diretamente a mesma origem de APIs que já alimenta a LK_US_BASE,
+ * sem depender do layout da aba "Validação Anexos×WBS×APIs".
  */
-function montarLkApiXRegra_(ss, mapaUsFinal) {
-  const apiSheet = ss.getSheetByName(SHEET_VALIDACAO_API);
-  if (!apiSheet) {
-    // Se a aba de validação de APIs não existir, não criamos a LK de APIs.
-    return;
-  }
-
-  const apiData = apiSheet.getDataRange().getValues();
-  if (apiData.length < 2) {
-    escreverAba_(ss, SHEET_LK_API_X_REGRA, ['API_Codigo','ID_US','Etapa','Processo','Regra','Regra_Detalhada_WBS','Status_Projeto','Pct_Realizado','Status_API'], []);
-    return;
-  }
-
-  // Detecta automaticamente a linha de cabeçalho (onde aparecem IDs US e APIs)
-  let headerRowIndex = -1;
-  for (let r = 0; r < Math.min(apiData.length, 20); r++) {
-    const rowText = safeTrim_(apiData[r].join(' ')).toLowerCase();
-    if (rowText.includes('id') && rowText.includes('api')) {
-      headerRowIndex = r;
-      break;
-    }
-  }
-  if (headerRowIndex === -1) {
-    escreverAba_(ss, SHEET_LK_API_X_REGRA, ['API_Codigo','ID_US','Etapa','Processo','Regra','Regra_Detalhada_WBS','Status_Projeto','Pct_Realizado','Status_API'], []);
-    return;
-  }
-
-  const headerIdx = indexByName_(apiData[headerRowIndex]);
-  const apiRows   = apiData.slice(headerRowIndex + 1);
-
-  const iIds  = findColByTokens_(headerIdx, VAL_COL_IDS_US_TOKENS);
-  const iApis = findColByTokens_(headerIdx, VAL_COL_APIS_TOKENS);
-  if (iIds === undefined || iApis === undefined) {
-    // Cabeçalhos não encontrados, não geramos a LK de APIs.
-    escreverAba_(ss, SHEET_LK_API_X_REGRA, ['API_Codigo','ID_US','Etapa','Processo','Regra','Regra_Detalhada_WBS','Status_Projeto','Pct_Realizado','Status_API'], []);
-    return;
-  }
-
+function montarLkApiXRegra_(ss, mapaUsFinal, mapaVal) {
   // Opcional: mapear status da API a partir do catálogo detalhado
   const mapaStatusApi = {};
   const catSheet = ss.getSheetByName(SHEET_CAT_APIS);
@@ -589,36 +555,29 @@ function montarLkApiXRegra_(ss, mapaUsFinal) {
   }
 
   const linhas = [];
-  apiRows.forEach(row => {
-    const idsStr  = safeTrim_(row[iIds]);
-    const apisStr = safeTrim_(row[iApis]);
-    if (!idsStr || !apisStr) return;
 
-    const ids  = idsStr.split(/[,\n;]+/).map(s => safeTrim_(s)).filter(Boolean);
+  // Para cada US consolidada, olhamos a lista de APIs vinda de mapaVal[idUs].Apis
+  Object.keys(mapaUsFinal).forEach(idUs => {
+    const infoUs = mapaUsFinal[idUs];
+    const v      = mapaVal[idUs] || {};
+    const apisStr = safeTrim_(v.Apis || '');
+    if (!apisStr) return;
+
     const apis = apisStr.split(/[,\n;]+/).map(s => safeTrim_(s)).filter(Boolean);
-
-    ids.forEach(idRaw => {
-      const idUs = normalizeId_(idRaw);
-      if (!idUs) return;
-      const infoUs = mapaUsFinal[idUs];
-      if (!infoUs) return; // só consideramos US que entraram na LK_US_BASE
-
-      apis.forEach(apiCodRaw => {
-        const apiCod = safeTrim_(apiCodRaw);
-        if (!apiCod) return;
-        const statusApi = mapaStatusApi[apiCod] || 'Não iniciado';
-        linhas.push([
-          apiCod,
-          infoUs.IdOriginal || idUs,
-          infoUs.Etapa || '',
-          infoUs.Processo || '',
-          infoUs.Regra || '',
-          infoUs.RegraDet || infoUs.FuncDet || '',
-          infoUs.Status || '',
-          infoUs.PctReal || 0,
-          statusApi
-        ]);
-      });
+    apis.forEach(apiCod => {
+      if (!apiCod) return;
+      const statusApi = mapaStatusApi[apiCod] || 'Não iniciado';
+      linhas.push([
+        apiCod,
+        infoUs.IdOriginal || idUs,
+        infoUs.Etapa || '',
+        infoUs.Processo || '',
+        infoUs.Regra || '',
+        infoUs.RegraDet || infoUs.FuncDet || '',
+        infoUs.Status || '',
+        infoUs.PctReal || 0,
+        statusApi
+      ]);
     });
   });
 
