@@ -32,6 +32,11 @@ const WBS_COL_REGRA_DET_ALT = 'US+FUNCIONALIDADE';
 // Coluna de ID da história na aba WBS (usada para casar com ID_US)
 const WBS_DET_COL_ID_HIST   = 'ID HISTÓRIA';
 
+// Colunas adicionais na aba WBS para quando não existir validação:
+// usamos Etapa / Processo diretamente da WBS.
+const WBS_DET_COL_ETAPA   = 'ETAPA';
+const WBS_DET_COL_PROCESSO = 'PROCESSO';
+
 // Colunas na aba Validação Cruzida EF×WBS
 // Não dependemos do nome exato: usamos palavras‑chave mínimas.
 // Pensando na sua planilha atual:
@@ -92,7 +97,9 @@ function atualizarBasesLK() {
       Duracao:  iDur  !== undefined ? row[iDur]  : '',
       Sistemas: iSist !== undefined ? row[iSist] : '',
       FuncOrig: iTask !== undefined ? row[iTask] : '',
-      RegraDet: '' // preenchido depois a partir da aba WBS_DET (US-FUNCIONALIDADE)
+      RegraDet: '', // preenchido depois a partir da aba WBS_DET (US-FUNCIONALIDADE)
+      EtapaWbs: '',
+      ProcessoWbs: ''
     };
   });
 
@@ -106,6 +113,8 @@ function atualizarBasesLK() {
       const iDetPri   = detHeaderIdx[WBS_COL_REGRA_DET_PRI];
       const iDetAlt   = detHeaderIdx[WBS_COL_REGRA_DET_ALT];
       const iDetTexto = iDetPri !== undefined ? iDetPri : iDetAlt;
+      const iDetEtapa   = detHeaderIdx[WBS_DET_COL_ETAPA];
+      const iDetProc    = detHeaderIdx[WBS_DET_COL_PROCESSO];
       if (iDetIdUs !== undefined && iDetTexto !== undefined) {
         detData.slice(1).forEach(r => {
           const rawId = safeTrim_(r[iDetIdUs]);
@@ -116,6 +125,12 @@ function atualizarBasesLK() {
           // não sobrescreve se já tiver
           if (!mapaWbs[idUs].RegraDet) {
             mapaWbs[idUs].RegraDet = r[iDetTexto] || '';
+          }
+          if (iDetEtapa !== undefined && !mapaWbs[idUs].EtapaWbs) {
+            mapaWbs[idUs].EtapaWbs = r[iDetEtapa] || '';
+          }
+          if (iDetProc !== undefined && !mapaWbs[idUs].ProcessoWbs) {
+            mapaWbs[idUs].ProcessoWbs = r[iDetProc] || '';
           }
         });
       }
@@ -269,8 +284,10 @@ function atualizarBasesLK() {
       ]);
     }
 
-    let etapa = v.Etapa || '';
-    let proc  = v.Processo || '';
+    // Etapa/Processo: prioriza validação; se não existir validação,
+    // preenche a partir da própria WBS.
+    let etapa = v.Etapa || w.EtapaWbs || '';
+    let proc  = v.Processo || w.ProcessoWbs || '';
     let regra = v.Regra || '';
     const funcDet  = w.RegraDet || w.FuncOrig || ''; // texto completo da WBS
     const regraDet = w.RegraDet || '';               // coluna específica de detalhamento da WBS
