@@ -12,8 +12,9 @@
 /*************** CONFIGURAÇÃO ***************/
 
 // Abas de origem
-const SHEET_WBS_PROJECT = 'WBS Project';
-const SHEET_VALIDACAO   = 'Validação Cruzada EF×WBS'; // nome EXATO da aba
+const SHEET_WBS_PROJECT = 'WBS Project';              // estrutura WBS + US Original
+const SHEET_WBS_DET     = 'WBS';                      // detalhamento por US (US-FUNCIONALIDADE)
+const SHEET_VALIDACAO   = 'Validação Cruzada EF×WBS'; // visão executiva / baseline
 
 // Aba de destino
 const SHEET_LK_US_BASE  = 'LK_US_BASE';
@@ -70,10 +71,6 @@ function atualizarBasesLK() {
   const iTask   = wbsHeaderIdx[WBS_COL_TASK];
   const iDur    = wbsHeaderIdx[WBS_COL_DUR];
   const iSist   = wbsHeaderIdx[WBS_COL_SIST];
-  let   iRegDet = wbsHeaderIdx[WBS_COL_REGRA_DET_PRI];
-  if (iRegDet === undefined) {
-    iRegDet = wbsHeaderIdx[WBS_COL_REGRA_DET_ALT];
-  }
 
   if (iIdUs === undefined) {
     throw new Error('Na aba "' + SHEET_WBS_PROJECT + '" não encontrei a coluna "' + WBS_COL_ID_US + '".');
@@ -88,9 +85,33 @@ function atualizarBasesLK() {
       Duracao:  iDur  !== undefined ? row[iDur]  : '',
       Sistemas: iSist !== undefined ? row[iSist] : '',
       FuncOrig: iTask !== undefined ? row[iTask] : '',
-      RegraDet: iRegDet !== undefined ? row[iRegDet] : ''
+      RegraDet: '' // preenchido depois a partir da aba WBS_DET (US-FUNCIONALIDADE)
     };
   });
+
+  // ===== 1b) WBS (detalhamento) → complementar RegraDet por ID_US, se existir =====
+  const detSheet = ss.getSheetByName(SHEET_WBS_DET);
+  if (detSheet) {
+    const detData = detSheet.getDataRange().getValues();
+    if (detData.length > 1) {
+      const detHeaderIdx = indexByName_(detData[0]);
+      const iDetIdUs  = detHeaderIdx[WBS_COL_ID_US];
+      const iDetPri   = detHeaderIdx[WBS_COL_REGRA_DET_PRI];
+      const iDetAlt   = detHeaderIdx[WBS_COL_REGRA_DET_ALT];
+      const iDetTexto = iDetPri !== undefined ? iDetPri : iDetAlt;
+      if (iDetIdUs !== undefined && iDetTexto !== undefined) {
+        detData.slice(1).forEach(r => {
+          const idUs = safeTrim_(r[iDetIdUs]);
+          if (!idUs) return;
+          if (!mapaWbs[idUs]) mapaWbs[idUs] = {};
+          // não sobrescreve se já tiver
+          if (!mapaWbs[idUs].RegraDet) {
+            mapaWbs[idUs].RegraDet = r[iDetTexto] || '';
+          }
+        });
+      }
+    }
+  }
 
   // ===== 2) Validação Cruzada → explode IDs USs mapeadas =====
   const valData = valSheet.getDataRange().getValues();
@@ -207,11 +228,11 @@ function atualizarBasesLK() {
     const cob = (v.Cobertura || '').toUpperCase();
     if (cob.includes('COBERTO') && !cob.includes('SEM')) {
       statusProj = 'Concluído';
-      pctReal    = 1;
-      dtFimProj  = new Date(2026, 2, 31); // 31/03/2026
+      pctReal    = 100;                       // 100%
+      dtFimProj  = new Date(2026, 2, 30);     // 30/03/2026 (data de corte)
     } else if (cob.includes('PARCIAL')) {
       statusProj = 'Em andamento';
-      pctReal    = 0.5;
+      pctReal    = 50;                        // 50% (pode ser ajustado depois)
     } else {
       statusProj = 'Não iniciado';
       pctReal    = 0;
