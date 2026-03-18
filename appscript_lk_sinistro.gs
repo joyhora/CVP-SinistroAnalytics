@@ -17,7 +17,8 @@ const SHEET_WBS_DET     = 'WBS';                      // detalhamento por US (US
 const SHEET_VALIDACAO   = 'Validação Cruzada EF×WBS'; // visão executiva / baseline
 
 // Aba de destino
-const SHEET_LK_US_BASE  = 'LK_US_BASE';
+const SHEET_LK_US_BASE        = 'LK_US_BASE';
+const SHEET_LK_US_NAO_MAPPEDS = 'LK_US_NAO_MAPEADAS';
 
 // Colunas na aba WBS Project
 const WBS_COL_ID_US   = 'US Original';
@@ -80,9 +81,11 @@ function atualizarBasesLK() {
 
   const mapaWbs = {};
   wbsRows.forEach(row => {
-    const idUs = safeTrim_(row[iIdUs]);
+    const idUsOrig = safeTrim_(row[iIdUs]);
+    const idUs     = normalizeId_(idUsOrig);
     if (!idUs) return;
     mapaWbs[idUs] = {
+      IdOriginal: idUsOrig,
       WBS:      iWbs  !== undefined ? row[iWbs]  : '',
       Duracao:  iDur  !== undefined ? row[iDur]  : '',
       Sistemas: iSist !== undefined ? row[iSist] : '',
@@ -103,7 +106,7 @@ function atualizarBasesLK() {
       const iDetTexto = iDetPri !== undefined ? iDetPri : iDetAlt;
       if (iDetIdUs !== undefined && iDetTexto !== undefined) {
         detData.slice(1).forEach(r => {
-          const idUs = safeTrim_(r[iDetIdUs]);
+          const idUs = normalizeId_(r[iDetIdUs]);
           if (!idUs) return;
           if (!mapaWbs[idUs]) mapaWbs[idUs] = {};
           // não sobrescreve se já tiver
@@ -169,7 +172,9 @@ function atualizarBasesLK() {
     idsStr.split(',')
       .map(s => safeTrim_(s))
       .filter(Boolean)
-      .forEach(idUs => {
+      .forEach(idUsRaw => {
+        const idUs = normalizeId_(idUsRaw);
+        if (!idUs) return;
         if (!mapaVal[idUs]) {
           mapaVal[idUs] = {
             Etapa: etapa,
@@ -210,10 +215,19 @@ function atualizarBasesLK() {
   ];
 
   const linhas = [];
+  const idsNaoMapeados = [];
 
   Object.keys(mapaWbs).forEach(idUs => {
     const w = mapaWbs[idUs] || {};
     const v = mapaVal[idUs] || {};
+
+    if (!v || !v.Etapa || !v.Processo || !v.Regra) {
+      idsNaoMapeados.push([
+        w.IdOriginal || idUs,
+        w.WBS || '',
+        w.FuncOrig || ''
+      ]);
+    }
 
     let etapa = v.Etapa || '';
     let proc  = v.Processo || '';
@@ -285,6 +299,16 @@ function atualizarBasesLK() {
   });
 
   escreverAba_(ss, SHEET_LK_US_BASE, lkHeader, linhas);
+
+  // Aba auxiliar para controle de qualidade: quais US da WBS não foram
+  // mapeadas na aba de Validação (impacta diretamente os indicadores).
+  // Isso permite corrigir a planilha de origem e voltar a rodar o script.
+  escreverAba_(
+    ss,
+    SHEET_LK_US_NAO_MAPPEDS,
+    ['ID_US', 'WBS', 'Funcionalidade_WBS'],
+    idsNaoMapeados
+  );
 }
 
 
@@ -301,6 +325,14 @@ function indexByName_(headerRow) {
 
 function safeTrim_(v) {
   return v == null ? '' : String(v).trim();
+}
+
+// Normalização única para IDs de US, garantindo correspondência exata
+// entre WBS Project, WBS e Validação Cruzada (ignorando espaços e caixa).
+function normalizeId_(id) {
+  const raw = safeTrim_(id);
+  if (!raw) return '';
+  return raw.toUpperCase().replace(/\s+/g, '');
 }
 
 /**
