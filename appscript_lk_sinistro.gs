@@ -24,8 +24,9 @@ const WBS_COL_WBS     = 'WBS';
 const WBS_COL_TASK    = 'Task Name';
 const WBS_COL_DUR     = 'Duracao_Dias';
 const WBS_COL_SIST    = 'Sistemas_Legados';
-// Coluna de detalhamento de regra/US na WBS (ex.: "US-FUNCIONALIDADE")
-const WBS_COL_REGRA_DET = 'US-FUNCIONALIDADE';
+// Coluna de detalhamento de regra/US na WBS (algumas planilhas podem usar "US-FUNCIONALIDADE" ou "US+FUNCIONALIDADE")
+const WBS_COL_REGRA_DET_PRI = 'US-FUNCIONALIDADE';
+const WBS_COL_REGRA_DET_ALT = 'US+FUNCIONALIDADE';
 
 // Colunas na aba Validação Cruzida EF×WBS
 // Não dependemos do nome exato: usamos palavras‑chave mínimas.
@@ -66,10 +67,13 @@ function atualizarBasesLK() {
 
   const iIdUs = wbsHeaderIdx[WBS_COL_ID_US];
   const iWbs  = wbsHeaderIdx[WBS_COL_WBS];
-  const iTask = wbsHeaderIdx[WBS_COL_TASK];
-  const iDur  = wbsHeaderIdx[WBS_COL_DUR];
-  const iSist = wbsHeaderIdx[WBS_COL_SIST];
-  const iRegDet = wbsHeaderIdx[WBS_COL_REGRA_DET];
+  const iTask   = wbsHeaderIdx[WBS_COL_TASK];
+  const iDur    = wbsHeaderIdx[WBS_COL_DUR];
+  const iSist   = wbsHeaderIdx[WBS_COL_SIST];
+  let   iRegDet = wbsHeaderIdx[WBS_COL_REGRA_DET_PRI];
+  if (iRegDet === undefined) {
+    iRegDet = wbsHeaderIdx[WBS_COL_REGRA_DET_ALT];
+  }
 
   if (iIdUs === undefined) {
     throw new Error('Na aba "' + SHEET_WBS_PROJECT + '" não encontrei a coluna "' + WBS_COL_ID_US + '".');
