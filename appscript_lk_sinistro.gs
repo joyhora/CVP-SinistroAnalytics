@@ -169,7 +169,8 @@ function atualizarBasesLK() {
     const idsStr = safeTrim_(row[iIds]);
     if (!idsStr) return;
 
-    idsStr.split(',')
+    // IDs podem vir separados por vírgula, ponto e vírgula ou quebras de linha.
+    idsStr.split(/[,\n;]+/)
       .map(s => safeTrim_(s))
       .filter(Boolean)
       .forEach(idUsRaw => {
@@ -332,7 +333,12 @@ function safeTrim_(v) {
 function normalizeId_(id) {
   const raw = safeTrim_(id);
   if (!raw) return '';
-  return raw.toUpperCase().replace(/\s+/g, '');
+  // Remove espaços e alguns sinais de pontuação de cauda que às vezes
+  // aparecem junto com o ID (p.ex. "SF1-SIS-US06C;" ou com quebras de linha).
+  return raw
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .replace(/[.;,]+$/g, '');
 }
 
 /**
