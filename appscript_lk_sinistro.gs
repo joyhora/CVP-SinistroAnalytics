@@ -178,10 +178,10 @@ function atualizarBasesLK() {
 
   const mapaVal = {};
   valRows.forEach(row => {
-    const etapa = row[iEtapa];
-    const proc  = row[iProc];
-    const func  = row[iFunc]; // funcionalidade baseline (executiva)
-    const regra = iRegra !== undefined ? row[iRegra] : '';
+    const etapa = safeTrim_(row[iEtapa]);
+    const proc  = safeTrim_(row[iProc]);
+    const func  = safeTrim_(row[iFunc]); // funcionalidade baseline (executiva)
+    const regra = iRegra !== undefined ? safeTrim_(row[iRegra]) : '';
     const cob   = safeTrim_(row[iCob]); // COBERTO / PARCIAL / X% SEM COBERTURA
     const apis  = iApis !== undefined ? safeTrim_(row[iApis]) : '';
 
