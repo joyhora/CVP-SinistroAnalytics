@@ -220,6 +220,7 @@ function atualizarBasesLK() {
     let regra = v.Regra || '';
     const funcDet = w.RegraDet || w.FuncOrig || ''; // texto completo da WBS
     const funcBase = v.Func || w.FuncOrig || '';    // baseline
+    const regraDet = w.RegraDet || '';              // coluna específica de detalhamento da WBS
     const wbs   = w.WBS || '';
     const dur   = w.Duracao || '';
     const sist  = w.Sistemas || '';
@@ -256,27 +257,28 @@ function atualizarBasesLK() {
     }
 
     linhas.push([
-      idUs,
-      etapa,
-      proc,
-      regra,
-      funcDet,
-      funcBase,
-      wbs,
-      dur,
-      '',
-      sist,
-      qtdApis,
-      0,
-      0,
-      statusProj,
-      pctReal,
-      '',
-      dtFimProj,
-      '',
-      '',
-      '',
-      ''
+      idUs,        // ID_US
+      etapa,       // Etapa
+      proc,        // Processo
+      regra,       // Regra
+      funcDet,     // Funcionalidade (texto completo WBS)
+      funcBase,    // Funcionalidade_Baseline
+      regraDet,    // Regra_Detalhada_WBS
+      wbs,         // WBS
+      dur,         // Duracao_Dias
+      '',          // Produto
+      sist,        // Sistemas_Legados
+      qtdApis,     // Qtd_APIs
+      0,           // Qtd_Times_Envolvidos
+      0,           // Tem_Interseccao
+      statusProj,  // Status_Projeto
+      pctReal,     // Pct_Realizado
+      '',          // Data_Inicio_Projeto
+      dtFimProj,   // Data_Fim_Projeto
+      '',          // Data_Fim_Planejada
+      '',          // Jira_Key
+      '',          // Jira_Link
+      ''           // Responsavel
     ]);
   });
 
