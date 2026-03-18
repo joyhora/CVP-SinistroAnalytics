@@ -534,8 +534,12 @@ function montarLkApiXRegra_(ss, mapaUsFinal, mapaVal) {
     const catData = catSheet.getDataRange().getValues();
     if (catData.length > 1) {
       const catHeaderIdx = indexByName_(catData[0]);
-      const iCatCod   = catHeaderIdx['API'];
-      const iCatStat  = catHeaderIdx['Status'];
+      // Na sua aba o código da API está em "API ID" e o status/fase
+      // em uma coluna que contém "Fase". Usamos busca por tokens.
+      const iCatCod  = findColByTokens_(catHeaderIdx, ['api','id']) ??
+                       findColByTokens_(catHeaderIdx, ['api']);
+      const iCatStat = findColByTokens_(catHeaderIdx, ['fase']) ??
+                       findColByTokens_(catHeaderIdx, ['status']);
       if (iCatCod !== undefined && iCatStat !== undefined) {
         catData.slice(1).forEach(r => {
           const cod = safeTrim_(r[iCatCod]);
