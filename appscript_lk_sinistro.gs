@@ -532,7 +532,7 @@ function montarLkApiXRegra_(ss, mapaUsFinal) {
 
   const apiData = apiSheet.getDataRange().getValues();
   if (apiData.length < 2) {
-    escreverAba_(ss, SHEET_LK_API_X_REGRA, ['API_Codigo','ID_US','Etapa','Processo','Regra','Regra_Detalhada_WBS','Status_Projeto','Pct_Realizado'], []);
+    escreverAba_(ss, SHEET_LK_API_X_REGRA, ['API_Codigo','ID_US','Etapa','Processo','Regra','Regra_Detalhada_WBS','Status_Projeto','Pct_Realizado','Status_API'], []);
     return;
   }
 
@@ -541,8 +541,35 @@ function montarLkApiXRegra_(ss, mapaUsFinal) {
   const iApis = findColByTokens_(headerIdx, VAL_COL_APIS_TOKENS);
   if (iIds === undefined || iApis === undefined) {
     // Cabeçalhos não encontrados, não geramos a LK de APIs.
-    escreverAba_(ss, SHEET_LK_API_X_REGRA, ['API_Codigo','ID_US','Etapa','Processo','Regra','Regra_Detalhada_WBS','Status_Projeto','Pct_Realizado'], []);
+    escreverAba_(ss, SHEET_LK_API_X_REGRA, ['API_Codigo','ID_US','Etapa','Processo','Regra','Regra_Detalhada_WBS','Status_Projeto','Pct_Realizado','Status_API'], []);
     return;
+  }
+
+  // Opcional: mapear status da API a partir do catálogo detalhado
+  const mapaStatusApi = {};
+  const catSheet = ss.getSheetByName(SHEET_CAT_APIS);
+  if (catSheet) {
+    const catData = catSheet.getDataRange().getValues();
+    if (catData.length > 1) {
+      const catHeaderIdx = indexByName_(catData[0]);
+      const iCatCod   = catHeaderIdx['API'];
+      const iCatStat  = catHeaderIdx['Status'];
+      if (iCatCod !== undefined && iCatStat !== undefined) {
+        catData.slice(1).forEach(r => {
+          const cod = safeTrim_(r[iCatCod]);
+          const st  = safeTrim_(r[iCatStat]);
+          if (!cod) return;
+          const stNorm = st.toLowerCase();
+          // Regra de negócio: se contiver "fase 1" considerar "Homologação",
+          // caso contrário "Não iniciado".
+          let statusApi = 'Não iniciado';
+          if (stNorm.indexOf('fase 1') !== -1) {
+            statusApi = 'Homologação';
+          }
+          mapaStatusApi[cod] = statusApi;
+        });
+      }
+    }
   }
 
   const linhas = [];
@@ -560,8 +587,10 @@ function montarLkApiXRegra_(ss, mapaUsFinal) {
       const infoUs = mapaUsFinal[idUs];
       if (!infoUs) return; // só consideramos US que entraram na LK_US_BASE
 
-      apis.forEach(apiCod => {
+      apis.forEach(apiCodRaw => {
+        const apiCod = safeTrim_(apiCodRaw);
         if (!apiCod) return;
+        const statusApi = mapaStatusApi[apiCod] || 'Não iniciado';
         linhas.push([
           apiCod,
           infoUs.IdOriginal || idUs,
@@ -570,7 +599,8 @@ function montarLkApiXRegra_(ss, mapaUsFinal) {
           infoUs.Regra || '',
           infoUs.RegraDet || infoUs.FuncDet || '',
           infoUs.Status || '',
-          infoUs.PctReal || 0
+          infoUs.PctReal || 0,
+          statusApi
         ]);
       });
     });
@@ -584,7 +614,8 @@ function montarLkApiXRegra_(ss, mapaUsFinal) {
     'Regra',
     'Regra_Detalhada_WBS',
     'Status_Projeto',
-    'Pct_Realizado'
+    'Pct_Realizado',
+    'Status_API'
   ];
 
   escreverAba_(ss, SHEET_LK_API_X_REGRA, header, linhas);
