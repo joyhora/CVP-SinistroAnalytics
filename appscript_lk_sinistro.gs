@@ -82,6 +82,8 @@ function atualizarBasesLK() {
   const mapaWbs = {};
   wbsRows.forEach(row => {
     const idUsOrig = safeTrim_(row[iIdUs]);
+    // Em algumas planilhas há uma linha final "IDHISTORIA" que não é uma US válida.
+    if (idUsOrig.toUpperCase() === 'IDHISTORIA') return;
     const idUs     = normalizeId_(idUsOrig);
     if (!idUs) return;
     mapaWbs[idUs] = {
