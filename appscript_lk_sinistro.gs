@@ -127,10 +127,10 @@ function atualizarBasesLK() {
             mapaWbs[idUs].RegraDet = r[iDetTexto] || '';
           }
           if (iDetEtapa !== undefined && !mapaWbs[idUs].EtapaWbs) {
-            mapaWbs[idUs].EtapaWbs = r[iDetEtapa] || '';
+            mapaWbs[idUs].EtapaWbs = safeTrim_(r[iDetEtapa]);
           }
           if (iDetProc !== undefined && !mapaWbs[idUs].ProcessoWbs) {
-            mapaWbs[idUs].ProcessoWbs = r[iDetProc] || '';
+            mapaWbs[idUs].ProcessoWbs = safeTrim_(r[iDetProc]);
           }
         });
       }
