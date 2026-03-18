@@ -25,9 +25,11 @@ const WBS_COL_WBS     = 'WBS';
 const WBS_COL_TASK    = 'Task Name';
 const WBS_COL_DUR     = 'Duracao_Dias';
 const WBS_COL_SIST    = 'Sistemas_Legados';
-// Coluna de detalhamento de regra/US na WBS (algumas planilhas podem usar "US-FUNCIONALIDADE" ou "US+FUNCIONALIDADE")
+// Coluna de detalhamento de regra/US na aba WBS (algumas planilhas podem usar "US-FUNCIONALIDADE" ou "US+FUNCIONALIDADE")
 const WBS_COL_REGRA_DET_PRI = 'US-FUNCIONALIDADE';
 const WBS_COL_REGRA_DET_ALT = 'US+FUNCIONALIDADE';
+// Coluna de ID da história na aba WBS (usada para casar com ID_US)
+const WBS_DET_COL_ID_HIST   = 'ID HISTÓRIA';
 
 // Colunas na aba Validação Cruzida EF×WBS
 // Não dependemos do nome exato: usamos palavras‑chave mínimas.
@@ -95,7 +97,7 @@ function atualizarBasesLK() {
     const detData = detSheet.getDataRange().getValues();
     if (detData.length > 1) {
       const detHeaderIdx = indexByName_(detData[0]);
-      const iDetIdUs  = detHeaderIdx[WBS_COL_ID_US];
+      const iDetIdUs  = detHeaderIdx[WBS_DET_COL_ID_HIST];
       const iDetPri   = detHeaderIdx[WBS_COL_REGRA_DET_PRI];
       const iDetAlt   = detHeaderIdx[WBS_COL_REGRA_DET_ALT];
       const iDetTexto = iDetPri !== undefined ? iDetPri : iDetAlt;
