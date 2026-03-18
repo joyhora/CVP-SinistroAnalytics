@@ -261,17 +261,17 @@ function atualizarBasesLK() {
     let pctReal    = 0;
     let dtFimProj  = '';
 
-  const cob = (v.Cobertura || '').toUpperCase();
-  if (cob.includes('COBERTO') && !cob.includes('SEM')) {
+    const cob = (v.Cobertura || '').toUpperCase();
+    if (cob.includes('COBERTO') && !cob.includes('SEM')) {
       statusProj = 'Implementado';
-      pctReal    = 100;                       // 100%
+      pctReal    = 1;                         // 100%
       dtFimProj  = new Date(2026, 2, 30);     // 30/03/2026 (data de corte)
     } else if (cob.includes('PARCIAL')) {
       statusProj = 'Em andamento';
-      pctReal    = 50;                        // 50% (pode ser ajustado depois)
+      pctReal    = 0.5;                       // 50%
     } else {
       statusProj = 'Não iniciado';
-      pctReal    = 0;
+      pctReal    = 0;                         // 0%
     }
 
     let qtdApis = 0;
@@ -404,6 +404,12 @@ function escreverAba_(ss, sheetName, header, rows) {
   const lastCol = header.length;
   const fullRange = sheet.getRange(1, 1, lastRow, lastCol);
   fullRange.setWrap(true);
+  // Formatar coluna de percentual (Pct_Realizado) como porcentagem, se existir
+  const pctColIndex = header.indexOf('Pct_Realizado');
+  if (pctColIndex >= 0 && lastRow > 1) {
+    const pctRange = sheet.getRange(2, pctColIndex + 1, lastRow - 1, 1);
+    pctRange.setNumberFormat('0%');
+  }
   try {
     sheet.autoResizeColumns(1, lastCol);
   } catch (e) {
