@@ -218,9 +218,15 @@ function atualizarBasesLK() {
     let etapa = v.Etapa || '';
     let proc  = v.Processo || '';
     let regra = v.Regra || '';
-    const funcDet = w.RegraDet || w.FuncOrig || ''; // texto completo da WBS
-    const funcBase = v.Func || w.FuncOrig || '';    // baseline
-    const regraDet = w.RegraDet || '';              // coluna específica de detalhamento da WBS
+    const funcDet  = w.RegraDet || w.FuncOrig || ''; // texto completo da WBS
+    const regraDet = w.RegraDet || '';               // coluna específica de detalhamento da WBS
+
+    // Funcionalidade_Baseline: começa pela coluna de validação,
+    // mas se o detalhamento da WBS for maior, usa o texto mais completo.
+    let funcBase = v.Func || w.FuncOrig || '';
+    if (regraDet && regraDet.length > funcBase.length) {
+      funcBase = regraDet;
+    }
     const wbs   = w.WBS || '';
     const dur   = w.Duracao || '';
     const sist  = w.Sistemas || '';
