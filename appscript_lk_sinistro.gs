@@ -25,18 +25,20 @@ const WBS_COL_TASK    = 'Task Name';
 const WBS_COL_DUR     = 'Duracao_Dias';
 const WBS_COL_SIST    = 'Sistemas_Legados';
 
-// Colunas na aba Validação Cruzada EF×WBS
+// Colunas na aba Validação Cruzida EF×WBS
 // Não dependemos do nome exato: usamos palavras‑chave mínimas.
 // Pensando na sua planilha atual:
-//  - "ETAPA (Baseline)"           -> contém "etapa"
-//  - "PROCESSO (Baseline)"        -> contém "processo"
-//  - "FUNCIONALIDADE (Baseline)"  -> contém "funcionalidade"
-//  - "COBERTURA\nNA WBS"          -> contém "cobertura"
-//  - "IDs USs MAPEADAS (WBS)"     -> contém "ids us"
-//  - "APIs ENVOLVIDAS (WBS)"      -> contém "apis"
+//  - "ETAPA (Baseline)"               -> contém "etapa"
+//  - "PROCESSO (Baseline)"            -> contém "processo"
+//  - "FUNCIONALIDADE (Baseline)"      -> contém "funcionalidade"
+//  - "REGRA DE NEGÓCIO (Baseline)"    -> contém "regra" e "negocio"
+//  - "COBERTURA\nNA WBS"              -> contém "cobertura"
+//  - "IDs USs MAPEADAS (WBS)"         -> contém "ids us"
+//  - "APIs ENVOLVIDAS (WBS)"          -> contém "apis"
 const VAL_COL_ETAPA_TOKENS     = ['etapa'];
 const VAL_COL_PROCESSO_TOKENS  = ['processo'];
 const VAL_COL_FUNC_TOKENS      = ['funcionalidade'];
+const VAL_COL_REGRA_TOKENS     = ['regra', 'negocio'];
 const VAL_COL_COBERTURA_TOKENS = ['cobertura'];
 const VAL_COL_IDS_US_TOKENS    = ['ids us'];
 const VAL_COL_APIS_TOKENS      = ['apis'];
@@ -108,15 +110,16 @@ function atualizarBasesLK() {
   const iEtapa = findColByTokens_(valHeaderIdx, VAL_COL_ETAPA_TOKENS);
   const iProc  = findColByTokens_(valHeaderIdx, VAL_COL_PROCESSO_TOKENS);
   const iFunc  = findColByTokens_(valHeaderIdx, VAL_COL_FUNC_TOKENS);
+  const iRegra = findColByTokens_(valHeaderIdx, VAL_COL_REGRA_TOKENS);
   const iCob   = findColByTokens_(valHeaderIdx, VAL_COL_COBERTURA_TOKENS);
   const iIds   = findColByTokens_(valHeaderIdx, VAL_COL_IDS_US_TOKENS);
   const iApis  = findColByTokens_(valHeaderIdx, VAL_COL_APIS_TOKENS);
 
-  if ([iEtapa, iProc, iFunc, iCob, iIds].some(v => v === undefined)) {
+  if ([iEtapa, iProc, iFunc, iRegra, iCob, iIds].some(v => v === undefined)) {
     throw new Error(
       'Na aba "' + SHEET_VALIDACAO +
-      '" não consegui localizar automaticamente as colunas de Etapa/Processo/Funcionalidade/Cobertura/IDs USs. ' +
-      'Verifique se os cabeçalhos dessas colunas contêm, respectivamente, as palavras "Etapa", "Processo", "Funcionalidade", "Cobertura" e "IDs US".'
+      '" não consegui localizar automaticamente as colunas de Etapa/Processo/Funcionalidade/Regra/Cobertura/IDs USs. ' +
+      'Verifique se os cabeçalhos dessas colunas contêm, respectivamente, as palavras "Etapa", "Processo", "Funcionalidade", "Regra"/"Negócio", "Cobertura" e "IDs US".'
     );
   }
 
@@ -125,6 +128,7 @@ function atualizarBasesLK() {
     const etapa = row[iEtapa];
     const proc  = row[iProc];
     const func  = row[iFunc];
+    const regra = iRegra !== undefined ? row[iRegra] : '';
     const cob   = safeTrim_(row[iCob]); // COBERTO / PARCIAL / X% SEM COBERTURA
     const apis  = iApis !== undefined ? safeTrim_(row[iApis]) : '';
 
@@ -136,7 +140,14 @@ function atualizarBasesLK() {
       .filter(Boolean)
       .forEach(idUs => {
         if (!mapaVal[idUs]) {
-          mapaVal[idUs] = { Etapa: etapa, Processo: proc, Func: func, Cobertura: cob, Apis: apis };
+          mapaVal[idUs] = {
+            Etapa: etapa,
+            Processo: proc,
+            Func: func,
+            Regra: regra,
+            Cobertura: cob,
+            Apis: apis
+          };
         }
       });
   });
@@ -146,6 +157,7 @@ function atualizarBasesLK() {
     'ID_US',
     'Etapa',
     'Processo',
+    'Regra',
     'Funcionalidade',
     'WBS',
     'Duracao_Dias',
@@ -172,6 +184,7 @@ function atualizarBasesLK() {
 
     const etapa = v.Etapa || '';
     const proc  = v.Processo || '';
+    const regra = v.Regra || '';
     const func  = v.Func || w.FuncOrig || '';
     const wbs   = w.WBS || '';
     const dur   = w.Duracao || '';
@@ -205,6 +218,7 @@ function atualizarBasesLK() {
       idUs,
       etapa,
       proc,
+      regra,
       func,
       wbs,
       dur,
