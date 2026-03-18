@@ -26,13 +26,20 @@ const WBS_COL_DUR     = 'Duracao_Dias';
 const WBS_COL_SIST    = 'Sistemas_Legados';
 
 // Colunas na aba Validação Cruzada EF×WBS
-// NÃO dependemos mais do nome exato: vamos procurar por palavras‑chave no cabeçalho.
-const VAL_COL_ETAPA_TOKENS     = ['etapa', 'baseline'];
-const VAL_COL_PROCESSO_TOKENS  = ['processo', 'baseline'];
-const VAL_COL_FUNC_TOKENS      = ['funcionalidade', 'regra de negócio', 'baseline'];
-const VAL_COL_COBERTURA_TOKENS = ['cobertura', 'wbs'];
-const VAL_COL_IDS_US_TOKENS    = ['ids uss mapeadas', 'ids us mapeadas', 'ids uss', 'ids us'];
-const VAL_COL_APIS_TOKENS      = ['apis envolvidas', 'apis', 'api'];
+// Não dependemos do nome exato: usamos palavras‑chave mínimas.
+// Pensando na sua planilha atual:
+//  - "ETAPA (Baseline)"           -> contém "etapa"
+//  - "PROCESSO (Baseline)"        -> contém "processo"
+//  - "FUNCIONALIDADE (Baseline)"  -> contém "funcionalidade"
+//  - "COBERTURA\nNA WBS"          -> contém "cobertura"
+//  - "IDs USs MAPEADAS (WBS)"     -> contém "ids us"
+//  - "APIs ENVOLVIDAS (WBS)"      -> contém "apis"
+const VAL_COL_ETAPA_TOKENS     = ['etapa'];
+const VAL_COL_PROCESSO_TOKENS  = ['processo'];
+const VAL_COL_FUNC_TOKENS      = ['funcionalidade'];
+const VAL_COL_COBERTURA_TOKENS = ['cobertura'];
+const VAL_COL_IDS_US_TOKENS    = ['ids us'];
+const VAL_COL_APIS_TOKENS      = ['apis'];
 
 
 /*************** FUNÇÃO PRINCIPAL ***************/
@@ -106,9 +113,11 @@ function atualizarBasesLK() {
   const iApis  = findColByTokens_(valHeaderIdx, VAL_COL_APIS_TOKENS);
 
   if ([iEtapa, iProc, iFunc, iCob, iIds].some(v => v === undefined)) {
-    throw new Error('Na aba "' + SHEET_VALIDACAO +
+    throw new Error(
+      'Na aba "' + SHEET_VALIDACAO +
       '" não consegui localizar automaticamente as colunas de Etapa/Processo/Funcionalidade/Cobertura/IDs USs. ' +
-      'Verifique se os cabeçalhos contêm as palavras‑chave: "Etapa", "Processo", "Funcionalidade", "Cobertura", "IDs USs".');
+      'Verifique se os cabeçalhos dessas colunas contêm, respectivamente, as palavras "Etapa", "Processo", "Funcionalidade", "Cobertura" e "IDs US".'
+    );
   }
 
   const mapaVal = {};
