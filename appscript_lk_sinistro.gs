@@ -220,7 +220,15 @@ function atualizarBasesLK() {
 
   Object.keys(mapaWbs).forEach(idUs => {
     const w = mapaWbs[idUs] || {};
-    const v = mapaVal[idUs] || {};
+
+    // 1ª tentativa: mapeamento direto pelo ID normalizado
+    let v = mapaVal[idUs] || {};
+    // 2ª tentativa (fallback): procurar por um "ID base" equivalente
+    // Ex.: usar configuração de SF1-SIS-US06C também para SF1-SIS-US06.
+    if (!v || (!v.Etapa && !v.Processo && !v.Regra)) {
+      const vAlt = findFromBaseId_(idUs, mapaVal);
+      if (vAlt) v = vAlt;
+    }
 
     if (!v || !v.Etapa || !v.Processo || !v.Regra) {
       idsNaoMapeados.push([
@@ -339,6 +347,23 @@ function normalizeId_(id) {
     .toUpperCase()
     .replace(/\s+/g, '')
     .replace(/[.;,]+$/g, '');
+}
+
+// Busca um registro "equivalente" na validação para um ID de US,
+// removendo um possível sufixo de letra no final (C, D, etc.).
+function findFromBaseId_(idUs, mapaVal) {
+  const base = idUs.replace(/[A-Z]$/g, ''); // SF1-SIS-US06C -> SF1-SIS-US06
+
+  // Se já existir exatamente o ID, devolve direto
+  if (mapaVal[idUs]) return mapaVal[idUs];
+
+  // Procura por alguma chave cujo "base" coincida
+  for (const [k, v] of Object.entries(mapaVal)) {
+    const baseK = k.replace(/[A-Z]$/g, '');
+    if (baseK === base) return v;
+  }
+
+  return null;
 }
 
 /**
