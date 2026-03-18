@@ -180,7 +180,9 @@ function atualizarBasesLK() {
       .forEach(idUsRaw => {
         const idUs = normalizeId_(idUsRaw);
         if (!idUs) return;
-        if (!mapaVal[idUs]) {
+        const atual = mapaVal[idUs];
+        // Sempre garantimos que exista um registro...
+        if (!atual) {
           mapaVal[idUs] = {
             Etapa: etapa,
             Processo: proc,
@@ -189,6 +191,24 @@ function atualizarBasesLK() {
             Cobertura: cob,
             Apis: apis
           };
+        } else {
+          // ...mas, se essa nova linha tiver informações mais completas
+          // (Etapa/Processo/Regra preenchidos), sobrescrevemos.
+          const temInfoNova =
+            (!!etapa && !atual.Etapa) ||
+            (!!proc  && !atual.Processo) ||
+            (!!regra && !atual.Regra) ||
+            (!!func  && !atual.Func);
+          if (temInfoNova) {
+            mapaVal[idUs] = {
+              Etapa: etapa || atual.Etapa,
+              Processo: proc || atual.Processo,
+              Func: func || atual.Func,
+              Regra: regra || atual.Regra,
+              Cobertura: cob || atual.Cobertura,
+              Apis: apis || atual.Apis
+            };
+          }
         }
       });
   });
