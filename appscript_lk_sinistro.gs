@@ -158,7 +158,7 @@ function atualizarBasesLK() {
   valRows.forEach(row => {
     const etapa = row[iEtapa];
     const proc  = row[iProc];
-    const func  = row[iFunc];
+    const func  = row[iFunc]; // funcionalidade baseline (executiva)
     const regra = iRegra !== undefined ? row[iRegra] : '';
     const cob   = safeTrim_(row[iCob]); // COBERTO / PARCIAL / X% SEM COBERTURA
     const apis  = iApis !== undefined ? safeTrim_(row[iApis]) : '';
@@ -189,7 +189,8 @@ function atualizarBasesLK() {
     'Etapa',
     'Processo',
     'Regra',
-    'Funcionalidade',
+    'Funcionalidade',           // texto completo (WBS)
+    'Funcionalidade_Baseline',  // texto baseline (validação)
     'Regra_Detalhada_WBS',
     'WBS',
     'Duracao_Dias',
@@ -214,14 +215,21 @@ function atualizarBasesLK() {
     const w = mapaWbs[idUs] || {};
     const v = mapaVal[idUs] || {};
 
-    const etapa = v.Etapa || '';
-    const proc  = v.Processo || '';
-    const regra = v.Regra || '';
-    const func  = v.Func || w.FuncOrig || '';
-    const regraDet = w.RegraDet || '';
+    let etapa = v.Etapa || '';
+    let proc  = v.Processo || '';
+    let regra = v.Regra || '';
+    const funcDet = w.RegraDet || w.FuncOrig || ''; // texto completo da WBS
+    const funcBase = v.Func || w.FuncOrig || '';    // baseline
     const wbs   = w.WBS || '';
     const dur   = w.Duracao || '';
     const sist  = w.Sistemas || '';
+
+    // Marcar US não mapeadas na validação de forma explícita
+    if (!v.Etapa || !v.Processo || !v.Regra) {
+      if (!etapa) etapa = '[NÃO MAPEADO NA VALIDAÇÃO]';
+      if (!proc)  proc  = '[NÃO MAPEADO NA VALIDAÇÃO]';
+      if (!regra) regra = '[NÃO MAPEADO NA VALIDAÇÃO]';
+    }
 
     let statusProj = '';
     let pctReal    = 0;
@@ -252,8 +260,8 @@ function atualizarBasesLK() {
       etapa,
       proc,
       regra,
-      func,
-      regraDet,
+      funcDet,
+      funcBase,
       wbs,
       dur,
       '',
