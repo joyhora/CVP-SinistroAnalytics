@@ -12,13 +12,16 @@
 /*************** CONFIGURAÇÃO ***************/
 
 // Abas de origem
-const SHEET_WBS_PROJECT = 'WBS Project';              // estrutura WBS + US Original
-const SHEET_WBS_DET     = 'WBS';                      // detalhamento por US (US-FUNCIONALIDADE)
-const SHEET_VALIDACAO   = 'Validação Cruzada EF×WBS'; // visão executiva / baseline
+const SHEET_WBS_PROJECT   = 'WBS Project';                // estrutura WBS + US Original
+const SHEET_WBS_DET       = 'WBS';                        // detalhamento por US (US-FUNCIONALIDADE)
+const SHEET_VALIDACAO     = 'Validação Cruzada EF×WBS';   // visão executiva / baseline
+const SHEET_VALIDACAO_API = 'Validação Anexos×WBS×APIs';  // mapeamento US x APIs
+const SHEET_CAT_APIS      = 'Catálogo APIs Detalhado';    // dicionário de APIs (opcional)
 
-// Aba de destino
+// Abas de destino
 const SHEET_LK_US_BASE        = 'LK_US_BASE';
 const SHEET_LK_US_NAO_MAPPEDS = 'LK_US_NAO_MAPEADAS';
+const SHEET_LK_API_X_REGRA    = 'LK_API_X_REGRA';
 
 // Colunas na aba WBS Project
 const WBS_COL_ID_US   = 'US Original';
@@ -255,6 +258,7 @@ function atualizarBasesLK() {
   ];
 
   const linhas = [];
+  const mapaUsFinal = {};
   const idsNaoMapeados = [];
 
   Object.keys(mapaWbs).forEach(idUs => {
@@ -329,6 +333,17 @@ function atualizarBasesLK() {
         .filter(Boolean).length;
     }
 
+    mapaUsFinal[idUs] = {
+      IdOriginal: w.IdOriginal || idUs,
+      Etapa: etapa,
+      Processo: proc,
+      Regra: regra,
+      FuncDet: funcDet,
+      RegraDet: regraDet,
+      Status: statusProj,
+      PctReal: pctReal
+    };
+
     linhas.push([
       idUs,        // ID_US
       etapa,       // Etapa
@@ -366,6 +381,9 @@ function atualizarBasesLK() {
     ['ID_US', 'WBS', 'Funcionalidade_WBS'],
     idsNaoMapeados
   );
+
+  // ===== 4) Montar visão analítica de APIs x Regras =====
+  montarLkApiXRegra_(ss, mapaUsFinal);
 }
 
 
@@ -497,4 +515,77 @@ function escreverAba_(ss, sheetName, header, rows) {
     // Em alguns ambientes (ou se muitas colunas), autoResize pode falhar;
     // nesse caso, apenas ignoramos o erro para não quebrar a execução.
   }
+}
+
+/**
+ * Cria a aba LK_API_X_REGRA com uma linha por combinação API x US/Regra.
+ * Depende de:
+ *  - SHEET_VALIDACAO_API: contém IDs USs mapeadas e APIs envolvidas
+ *  - mapaUsFinal: resumo das informações de cada US já consolidadas em LK_US_BASE
+ */
+function montarLkApiXRegra_(ss, mapaUsFinal) {
+  const apiSheet = ss.getSheetByName(SHEET_VALIDACAO_API);
+  if (!apiSheet) {
+    // Se a aba de validação de APIs não existir, não criamos a LK de APIs.
+    return;
+  }
+
+  const apiData = apiSheet.getDataRange().getValues();
+  if (apiData.length < 2) {
+    escreverAba_(ss, SHEET_LK_API_X_REGRA, ['API_Codigo','ID_US','Etapa','Processo','Regra','Regra_Detalhada_WBS','Status_Projeto','Pct_Realizado'], []);
+    return;
+  }
+
+  const headerIdx = indexByName_(apiData[0]);
+  const iIds  = findColByTokens_(headerIdx, VAL_COL_IDS_US_TOKENS);
+  const iApis = findColByTokens_(headerIdx, VAL_COL_APIS_TOKENS);
+  if (iIds === undefined || iApis === undefined) {
+    // Cabeçalhos não encontrados, não geramos a LK de APIs.
+    escreverAba_(ss, SHEET_LK_API_X_REGRA, ['API_Codigo','ID_US','Etapa','Processo','Regra','Regra_Detalhada_WBS','Status_Projeto','Pct_Realizado'], []);
+    return;
+  }
+
+  const linhas = [];
+  apiData.slice(1).forEach(row => {
+    const idsStr  = safeTrim_(row[iIds]);
+    const apisStr = safeTrim_(row[iApis]);
+    if (!idsStr || !apisStr) return;
+
+    const ids  = idsStr.split(/[,\n;]+/).map(s => safeTrim_(s)).filter(Boolean);
+    const apis = apisStr.split(/[,\n;]+/).map(s => safeTrim_(s)).filter(Boolean);
+
+    ids.forEach(idRaw => {
+      const idUs = normalizeId_(idRaw);
+      if (!idUs) return;
+      const infoUs = mapaUsFinal[idUs];
+      if (!infoUs) return; // só consideramos US que entraram na LK_US_BASE
+
+      apis.forEach(apiCod => {
+        if (!apiCod) return;
+        linhas.push([
+          apiCod,
+          infoUs.IdOriginal || idUs,
+          infoUs.Etapa || '',
+          infoUs.Processo || '',
+          infoUs.Regra || '',
+          infoUs.RegraDet || infoUs.FuncDet || '',
+          infoUs.Status || '',
+          infoUs.PctReal || 0
+        ]);
+      });
+    });
+  });
+
+  const header = [
+    'API_Codigo',
+    'ID_US',
+    'Etapa',
+    'Processo',
+    'Regra',
+    'Regra_Detalhada_WBS',
+    'Status_Projeto',
+    'Pct_Realizado'
+  ];
+
+  escreverAba_(ss, SHEET_LK_API_X_REGRA, header, linhas);
 }
