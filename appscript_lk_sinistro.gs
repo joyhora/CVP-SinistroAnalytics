@@ -24,8 +24,8 @@ const WBS_COL_WBS     = 'WBS';
 const WBS_COL_TASK    = 'Task Name';
 const WBS_COL_DUR     = 'Duracao_Dias';
 const WBS_COL_SIST    = 'Sistemas_Legados';
-// Coluna de detalhamento de regra/US na WBS (ex.: "US+Funcionalidade")
-const WBS_COL_REGRA_DET = 'US+Funcionalidade';
+// Coluna de detalhamento de regra/US na WBS (ex.: "US-FUNCIONALIDADE")
+const WBS_COL_REGRA_DET = 'US-FUNCIONALIDADE';
 
 // Colunas na aba Validação Cruzida EF×WBS
 // Não dependemos do nome exato: usamos palavras‑chave mínimas.
