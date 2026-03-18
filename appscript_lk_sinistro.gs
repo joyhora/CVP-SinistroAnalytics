@@ -24,6 +24,8 @@ const WBS_COL_WBS     = 'WBS';
 const WBS_COL_TASK    = 'Task Name';
 const WBS_COL_DUR     = 'Duracao_Dias';
 const WBS_COL_SIST    = 'Sistemas_Legados';
+// Coluna de detalhamento de regra/US na WBS (ex.: "US+Funcionalidade")
+const WBS_COL_REGRA_DET = 'US+Funcionalidade';
 
 // Colunas na aba Validação Cruzida EF×WBS
 // Não dependemos do nome exato: usamos palavras‑chave mínimas.
@@ -67,6 +69,7 @@ function atualizarBasesLK() {
   const iTask = wbsHeaderIdx[WBS_COL_TASK];
   const iDur  = wbsHeaderIdx[WBS_COL_DUR];
   const iSist = wbsHeaderIdx[WBS_COL_SIST];
+  const iRegDet = wbsHeaderIdx[WBS_COL_REGRA_DET];
 
   if (iIdUs === undefined) {
     throw new Error('Na aba "' + SHEET_WBS_PROJECT + '" não encontrei a coluna "' + WBS_COL_ID_US + '".');
@@ -80,7 +83,8 @@ function atualizarBasesLK() {
       WBS:      iWbs  !== undefined ? row[iWbs]  : '',
       Duracao:  iDur  !== undefined ? row[iDur]  : '',
       Sistemas: iSist !== undefined ? row[iSist] : '',
-      FuncOrig: iTask !== undefined ? row[iTask] : ''
+      FuncOrig: iTask !== undefined ? row[iTask] : '',
+      RegraDet: iRegDet !== undefined ? row[iRegDet] : ''
     };
   });
 
@@ -159,6 +163,7 @@ function atualizarBasesLK() {
     'Processo',
     'Regra',
     'Funcionalidade',
+    'Regra_Detalhada_WBS',
     'WBS',
     'Duracao_Dias',
     'Produto',
@@ -186,6 +191,7 @@ function atualizarBasesLK() {
     const proc  = v.Processo || '';
     const regra = v.Regra || '';
     const func  = v.Func || w.FuncOrig || '';
+    const regraDet = w.RegraDet || '';
     const wbs   = w.WBS || '';
     const dur   = w.Duracao || '';
     const sist  = w.Sistemas || '';
@@ -220,6 +226,7 @@ function atualizarBasesLK() {
       proc,
       regra,
       func,
+      regraDet,
       wbs,
       dur,
       '',
