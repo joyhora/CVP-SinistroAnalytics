@@ -331,4 +331,18 @@ function escreverAba_(ss, sheetName, header, rows) {
   if (rows && rows.length) {
     sheet.getRange(2, 1, rows.length, header.length).setValues(rows);
   }
+
+  // Garantir que textos longos não sejam "cortados" visualmente:
+  // aplicamos quebra de linha em todas as células da aba
+  // e ajustamos a largura das colunas ao conteúdo.
+  const lastRow = sheet.getLastRow() || 1;
+  const lastCol = header.length;
+  const fullRange = sheet.getRange(1, 1, lastRow, lastCol);
+  fullRange.setWrap(true);
+  try {
+    sheet.autoResizeColumns(1, lastCol);
+  } catch (e) {
+    // Em alguns ambientes (ou se muitas colunas), autoResize pode falhar;
+    // nesse caso, apenas ignoramos o erro para não quebrar a execução.
+  }
 }
