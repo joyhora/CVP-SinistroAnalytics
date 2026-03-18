@@ -108,7 +108,9 @@ function atualizarBasesLK() {
       const iDetTexto = iDetPri !== undefined ? iDetPri : iDetAlt;
       if (iDetIdUs !== undefined && iDetTexto !== undefined) {
         detData.slice(1).forEach(r => {
-          const idUs = normalizeId_(r[iDetIdUs]);
+          const rawId = safeTrim_(r[iDetIdUs]);
+          if (rawId.toUpperCase() === 'IDHISTORIA') return;
+          const idUs = normalizeId_(rawId);
           if (!idUs) return;
           if (!mapaWbs[idUs]) mapaWbs[idUs] = {};
           // não sobrescreve se já tiver
