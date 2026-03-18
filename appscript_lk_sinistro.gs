@@ -536,7 +536,23 @@ function montarLkApiXRegra_(ss, mapaUsFinal) {
     return;
   }
 
-  const headerIdx = indexByName_(apiData[0]);
+  // Detecta automaticamente a linha de cabeçalho (onde aparecem IDs US e APIs)
+  let headerRowIndex = -1;
+  for (let r = 0; r < Math.min(apiData.length, 20); r++) {
+    const rowText = safeTrim_(apiData[r].join(' ')).toLowerCase();
+    if (rowText.includes('id') && rowText.includes('api')) {
+      headerRowIndex = r;
+      break;
+    }
+  }
+  if (headerRowIndex === -1) {
+    escreverAba_(ss, SHEET_LK_API_X_REGRA, ['API_Codigo','ID_US','Etapa','Processo','Regra','Regra_Detalhada_WBS','Status_Projeto','Pct_Realizado','Status_API'], []);
+    return;
+  }
+
+  const headerIdx = indexByName_(apiData[headerRowIndex]);
+  const apiRows   = apiData.slice(headerRowIndex + 1);
+
   const iIds  = findColByTokens_(headerIdx, VAL_COL_IDS_US_TOKENS);
   const iApis = findColByTokens_(headerIdx, VAL_COL_APIS_TOKENS);
   if (iIds === undefined || iApis === undefined) {
@@ -573,7 +589,7 @@ function montarLkApiXRegra_(ss, mapaUsFinal) {
   }
 
   const linhas = [];
-  apiData.slice(1).forEach(row => {
+  apiRows.forEach(row => {
     const idsStr  = safeTrim_(row[iIds]);
     const apisStr = safeTrim_(row[iApis]);
     if (!idsStr || !apisStr) return;
