@@ -25,13 +25,14 @@ const WBS_COL_TASK    = 'Task Name';
 const WBS_COL_DUR     = 'Duracao_Dias';
 const WBS_COL_SIST    = 'Sistemas_Legados';
 
-// Colunas na aba Validação Cruzada EF×WBS (use os nomes EXATOS da linha 1)
-const VAL_COL_ETAPA     = 'ETAPA (Baseline)';
-const VAL_COL_PROCESSO  = 'PROCESSO (Baseline)';
-const VAL_COL_FUNC      = 'FUNCIONALIDADE (Baseline)';
-const VAL_COL_COBERTURA = 'COBERTURA NA WBS';
-const VAL_COL_IDS_US    = 'IDs USs MAPEADAS (WBS)';
-const VAL_COL_APIS      = 'APIs ENVOLVIDAS (WBS)';
+// Colunas na aba Validação Cruzada EF×WBS
+// NÃO dependemos mais do nome exato: vamos procurar por palavras‑chave no cabeçalho.
+const VAL_COL_ETAPA_TOKENS     = ['etapa', 'baseline'];
+const VAL_COL_PROCESSO_TOKENS  = ['processo', 'baseline'];
+const VAL_COL_FUNC_TOKENS      = ['funcionalidade', 'regra de negócio', 'baseline'];
+const VAL_COL_COBERTURA_TOKENS = ['cobertura', 'wbs'];
+const VAL_COL_IDS_US_TOKENS    = ['ids uss mapeadas', 'ids us mapeadas', 'ids uss', 'ids us'];
+const VAL_COL_APIS_TOKENS      = ['apis envolvidas', 'apis', 'api'];
 
 
 /*************** FUNÇÃO PRINCIPAL ***************/
@@ -81,20 +82,17 @@ function atualizarBasesLK() {
   const valHeaderIdx = indexByName_(valData[0]);
   const valRows      = valData.slice(1);
 
-  const iEtapa = valHeaderIdx[VAL_COL_ETAPA];
-  const iProc  = valHeaderIdx[VAL_COL_PROCESSO];
-  const iFunc  = valHeaderIdx[VAL_COL_FUNC];
-  const iCob   = valHeaderIdx[VAL_COL_COBERTURA];
-  const iIds   = valHeaderIdx[VAL_COL_IDS_US];
-  const iApis  = valHeaderIdx[VAL_COL_APIS];
+  const iEtapa = findColByTokens_(valHeaderIdx, VAL_COL_ETAPA_TOKENS);
+  const iProc  = findColByTokens_(valHeaderIdx, VAL_COL_PROCESSO_TOKENS);
+  const iFunc  = findColByTokens_(valHeaderIdx, VAL_COL_FUNC_TOKENS);
+  const iCob   = findColByTokens_(valHeaderIdx, VAL_COL_COBERTURA_TOKENS);
+  const iIds   = findColByTokens_(valHeaderIdx, VAL_COL_IDS_US_TOKENS);
+  const iApis  = findColByTokens_(valHeaderIdx, VAL_COL_APIS_TOKENS);
 
   if ([iEtapa, iProc, iFunc, iCob, iIds].some(v => v === undefined)) {
-    throw new Error(
-      'Na aba "' + SHEET_VALIDACAO +
-      '" faltam colunas obrigatórias: "' +
-      [VAL_COL_ETAPA, VAL_COL_PROCESSO, VAL_COL_FUNC, VAL_COL_COBERTURA, VAL_COL_IDS_US].join('", "') +
-      '".'
-    );
+    throw new Error('Na aba "' + SHEET_VALIDACAO +
+      '" não consegui localizar automaticamente as colunas de Etapa/Processo/Funcionalidade/Cobertura/IDs USs. ' +
+      'Verifique se os cabeçalhos contêm as palavras‑chave: "Etapa", "Processo", "Funcionalidade", "Cobertura", "IDs USs".');
   }
 
   const mapaVal = {};
@@ -218,6 +216,27 @@ function indexByName_(headerRow) {
 
 function safeTrim_(v) {
   return v == null ? '' : String(v).trim();
+}
+
+/**
+ * Encontra o índice de coluna procurando por um conjunto de palavras‑chave
+ * no cabeçalho, ignorando acentos e maiúsculas/minúsculas.
+ */
+function findColByTokens_(headerIdx, tokens) {
+  const normalize = s =>
+    safeTrim_(s)
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, ''); // remove acentos
+
+  const normTokens = tokens.map(normalize);
+
+  for (const [name, i] of Object.entries(headerIdx)) {
+    const normName = normalize(name);
+    const matchesAll = normTokens.every(tok => normName.includes(tok));
+    if (matchesAll) return i;
+  }
+  return undefined;
 }
 
 function escreverAba_(ss, sheetName, header, rows) {
