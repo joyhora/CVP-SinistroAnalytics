@@ -231,12 +231,8 @@ function atualizarBasesLK() {
     const dur   = w.Duracao || '';
     const sist  = w.Sistemas || '';
 
-    // Marcar US não mapeadas na validação de forma explícita
-    if (!v.Etapa || !v.Processo || !v.Regra) {
-      if (!etapa) etapa = '[NÃO MAPEADO NA VALIDAÇÃO]';
-      if (!proc)  proc  = '[NÃO MAPEADO NA VALIDAÇÃO]';
-      if (!regra) regra = '[NÃO MAPEADO NA VALIDAÇÃO]';
-    }
+    // Se não houver mapeamento na validação, mantemos Etapa/Processo/Regra em branco
+    // (sem preencher com o texto "[NÃO MAPEADO NA VALIDAÇÃO]"), para evitar esse rótulo na LK.
 
     let statusProj = '';
     let pctReal    = 0;
