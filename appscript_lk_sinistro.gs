@@ -602,73 +602,158 @@ function montarLkApiXRegra_(ss, mapaUsFinal, mapaVal) {
 
 /*************** DRAFT CRONOGRAMA ***************/
 
-const SHEET_DRAFT_CRONOGRAMA = 'Draft-Cronograma';
+/** Aba existente na planilha (nome com espaço). Fallback: Draft-Cronograma */
+const SHEET_DRAFT_CRONOGRAMA_PRI = 'Draft Cronograma';
+const SHEET_DRAFT_CRONOGRAMA_ALT = 'Draft-Cronograma';
 /** Data limite do cronograma (31/10/2026) */
 const CRONO_DATA_FIM = new Date(2026, 9, 31);
 /** Início da fase de desenvolvimento (após planejamento típico até 30/09/2026) */
 const CRONO_DATA_INICIO_DEV = new Date(2026, 9, 1); // 01/10/2026
-/** Horas macro por API (dev + integração) */
-const CRONO_HORAS_POR_API = 16;
-/** Horas de homologação/testes por bloco de tarefa de desenvolvimento */
+/** Horas por API – análise de documentação */
+const CRONO_HORAS_ANALISE_POR_API = 8;
+/** Horas por API – desenvolvimento Salesforce */
+const CRONO_HORAS_DEV_POR_API = 16;
+/** Horas base – testes em conjunto com backend (+ complemento por API) */
+const CRONO_HORAS_TESTE_BASE = 24;
+const CRONO_HORAS_TESTE_POR_API = 4;
+/** Horas – homologação negócio (bloco) */
 const CRONO_HORAS_HOMOLOG_BLOCO = 32;
-/** Capacidade diária considerada: 5 desenvolvedores × 8 h */
+/** Capacidade diária: 5 desenvolvedores × 8 h */
 const CRONO_HORAS_DIA_EQUIPE_DEV = 40;
 
 /**
- * Gera/atualiza a aba Draft-Cronograma: preenche colunas G (horas), C/D (início/término)
- * e H (observação com racional), respeitando término até 31/10/2026 e equipe de 5 devs.
- * Premissas no texto de observação: horas por API, homologação, equipe (1 arquiteto, 1 AN, 5 devs).
- *
- * Estrutura esperada (linha 1 = cabeçalho):
- * A Task Name, B Duração (dias), C Início, D Término, E % concluída, F Recursos, G Horas estimadas, H Observação
- *
- * Processa linhas em que a coluna A sugere tarefa de desenvolvimento/entrega ou H contém códigos de API.
+ * Localiza a aba de cronograma já existente (não cria aba nova).
+ */
+function obterAbaDraftCronograma_(ss) {
+  let sh = ss.getSheetByName(SHEET_DRAFT_CRONOGRAMA_PRI);
+  if (!sh) sh = ss.getSheetByName(SHEET_DRAFT_CRONOGRAMA_ALT);
+  return sh;
+}
+
+/**
+ * Classifica apenas as 4 atividades desejadas (normalizado sem acento).
+ * Retorna: ANALISE | DEV | TESTE | HOMOLOG | null
+ */
+function classificarAtividadeCronograma_(nomeTarefa) {
+  const n = safeTrim_(nomeTarefa)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (!n) return null;
+  // Homologação negócio (antes de "teste" genérico)
+  if (/homologa/.test(n)) return 'HOMOLOG';
+  // Testes em conjunto com backend
+  if (/teste.*conjunto|testes.*conjunto/.test(n) && /backend|api/.test(n)) return 'TESTE';
+  if (/teste.*conjunto|testes.*conjunto/.test(n)) return 'TESTE';
+  // Desenvolvimento Salesforce
+  if (/desenvolvimento/.test(n) && /salesforce|api/.test(n)) return 'DEV';
+  if (/desenvolvimento.*salesforce/.test(n)) return 'DEV';
+  // Análise documentação / Análise documento
+  if (/analise/.test(n) && /document|documento|api/.test(n)) return 'ANALISE';
+  if (/analise.*document/.test(n)) return 'ANALISE';
+  return null;
+}
+
+/**
+ * Detecta índices de colunas a partir da linha de cabeçalho (Task, Datas, Horas, API, Observação).
+ */
+function detectarColunasCronograma_(headerRow) {
+  const raw = headerRow.map(c => safeTrim_(String(c)));
+  const h = raw.map(s => s.toLowerCase());
+  const norm = s =>
+    s
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+  let colTask = -1;
+  for (let i = 0; i < h.length; i++) {
+    const t = norm(raw[i]);
+    if (t.indexOf('task') !== -1 || (t.indexOf('nome') !== -1 && t.indexOf('recurso') === -1 && t.indexOf('area') === -1))
+      colTask = i;
+  }
+  if (colTask < 0) colTask = 0;
+
+  const idx = pred => {
+    for (let i = 0; i < h.length; i++) if (pred(norm(raw[i]), i)) return i;
+    return -1;
+  };
+
+  const colDur = idx((t, i) => /dura|duracao/.test(t));
+  const colIni = idx((t, i) => /inicio|início/.test(t) && !/planej/.test(t));
+  const colFim = idx((t, i) => /termino|término|fim/.test(t));
+  const colPct = idx((t, i) => /%|conclu/.test(t));
+  // Horas: quantidade / estimada / horas (evita coluna "nomes" duplicada)
+  let colHor = idx((t, i) => /hora|quantidade|estim/.test(t) && !/recurso/.test(t));
+  if (colHor < 0) colHor = 6;
+  // Coluna só "API"
+  let colApi = idx((t, i) => t === 'api' || (t.indexOf('api') !== -1 && t.indexOf('observa') === -1 && t.indexOf('envolv') === -1));
+  const colObs = idx((t, i) => /observa|observacao|observação|racional/.test(t));
+
+  if (colDur < 0) colDur = 1;
+  if (colIni < 0) colIni = 2;
+  if (colFim < 0) colFim = 3;
+  if (colPct < 0) colPct = 4;
+  if (colHor < 0) colHor = 6;
+  // Se não achou coluna API separada, APIs vêm do texto da observação
+  if (colApi < 0) colApi = -1;
+
+  return {
+    colTask,
+    colDur,
+    colIni,
+    colFim,
+    colPct,
+    colHor,
+    colApi,
+    colObs: colObs >= 0 ? colObs : 7
+  };
+}
+
+/**
+ * Gera/atualiza a aba **Draft Cronograma** (existente): preenche B/C/D/G e acrescenta racional em Observação.
+ * Somente linhas cujo Task Name corresponde a:
+ * - Análise documentação das APIs (Análise documento)
+ * - Desenvolvimento Salesforce
+ * - Testes em conjunto com backend
+ * - Homologação negócio
  */
 function gerarDraftCronograma() {
   const ss = SpreadsheetApp.getActive();
-  let sh = ss.getSheetByName(SHEET_DRAFT_CRONOGRAMA);
+  const sh = obterAbaDraftCronograma_(ss);
   if (!sh) {
-    sh = ss.insertSheet(SHEET_DRAFT_CRONOGRAMA);
-    sh.getRange(1, 1, 1, 8).setValues([[
-      'Task Name',
-      'Duração (dias)',
-      'Início',
-      'Término',
-      '% concluída',
-      'Nomes dos recursos',
-      'Quantidade de horas estimada',
-      'Observação'
-    ]]);
-    SpreadsheetApp.getUi().alert(
-      'Aba "' + SHEET_DRAFT_CRONOGRAMA + '" criada com cabeçalho. Cole ou preencha as linhas de tarefas e execute novamente.'
-    );
+    const msg =
+      'Não encontrei a aba "' +
+      SHEET_DRAFT_CRONOGRAMA_PRI +
+      '" nem "' +
+      SHEET_DRAFT_CRONOGRAMA_ALT +
+      '". Renomeie sua aba para um desses nomes ou crie a aba manualmente.';
+    try {
+      SpreadsheetApp.getUi().alert(msg);
+    } catch (e) {
+      throw new Error(msg);
+    }
     return;
   }
 
   const data = sh.getDataRange().getValues();
   if (data.length < 2) {
-    SpreadsheetApp.getUi().alert('Aba "' + SHEET_DRAFT_CRONOGRAMA + '" sem linhas de dados além do cabeçalho.');
+    try {
+      SpreadsheetApp.getUi().alert('Aba de cronograma sem linhas de dados além do cabeçalho.');
+    } catch (e) {
+      /* headless */
+    }
     return;
   }
 
-  const header = data[0].map(c => safeTrim_(String(c)).toLowerCase());
-  const iTask = header.findIndex(h => h.indexOf('task') !== -1 || h.indexOf('nome') !== -1);
-  const iDur  = header.findIndex(h => h.indexOf('dura') !== -1 || h.indexOf('duracao') !== -1);
-  const iIni  = header.findIndex(h => h.indexOf('início') !== -1 || h.indexOf('inicio') !== -1);
-  const iFim  = header.findIndex(h => h.indexOf('término') !== -1 || h.indexOf('termino') !== -1);
-  const iPct  = header.findIndex(h => h.indexOf('%') !== -1 || h.indexOf('conclu') !== -1);
-  const iRec  = header.findIndex(h => h.indexOf('recurso') !== -1 || h.indexOf('nome') !== -1 && h.indexOf('task') === -1);
-  const iHor  = header.findIndex(h => h.indexOf('hora') !== -1);
-  const iObs  = header.findIndex(h => h.indexOf('observa') !== -1);
-
-  const colTask = iTask >= 0 ? iTask : 0;
-  const colDur  = iDur  >= 0 ? iDur  : 1;
-  const colIni  = iIni  >= 0 ? iIni  : 2;
-  const colFim  = iFim  >= 0 ? iFim  : 3;
-  const colPct  = iPct  >= 0 ? iPct  : 4;
-  const colRec  = iRec  >= 0 ? iRec  : 5;
-  const colHor  = iHor  >= 0 ? iHor  : 6;
-  const colObs  = iObs  >= 0 ? iObs  : 7;
+  const cols = detectarColunasCronograma_(data[0]);
+  const colTask = cols.colTask;
+  const colDur = cols.colDur;
+  const colIni = cols.colIni;
+  const colFim = cols.colFim;
+  const colHor = cols.colHor;
+  const colObs = cols.colObs;
+  const colApi = cols.colApi;
 
   let cursor = new Date(CRONO_DATA_INICIO_DEV.getTime());
   const apiRegex = /\b(API-\d+|BK\d+)\b/gi;
@@ -676,32 +761,64 @@ function gerarDraftCronograma() {
   for (let r = 1; r < data.length; r++) {
     const row = data[r];
     const nomeTarefa = safeTrim_(row[colTask]);
-    const obsExistente = safeTrim_(row[colObs] || '');
     if (!nomeTarefa) continue;
 
-    const textoBusca = (nomeTarefa + ' ' + obsExistente).toLowerCase();
-    const ehDev =
-      /desenvolvimento|entrega salesforce|homologa|teste conjunto|api\b|backend|análise\b|analise\b/.test(textoBusca) ||
-      apiRegex.test(obsExistente + ' ' + nomeTarefa);
+    const tipo = classificarAtividadeCronograma_(nomeTarefa);
+    if (!tipo) continue;
 
-    if (!ehDev) continue;
+    const textoApiCol = colApi >= 0 ? safeTrim_(row[colApi] || '') : '';
+    const obsExistente = safeTrim_(row[colObs] || '');
+    const sFull = textoApiCol + ' ' + obsExistente + ' ' + nomeTarefa;
 
     const apis = [];
     let m;
-    const sFull = nomeTarefa + ' ' + obsExistente;
     apiRegex.lastIndex = 0;
     while ((m = apiRegex.exec(sFull)) !== null) {
       const cod = m[1].toUpperCase();
       if (apis.indexOf(cod) === -1) apis.push(cod);
     }
+    const qtdApis = Math.max(apis.length, 1);
 
-    const temDevNoNome = nomeTarefa.toLowerCase().indexOf('desenvolvimento') !== -1;
-    const nApis = Math.max(apis.length, temDevNoNome ? 1 : 0);
-    const qtdApis = nApis > 0 ? nApis : 1;
+    let totalHoras = 0;
+    let detalheTipo = '';
 
-    const horasDev = qtdApis * CRONO_HORAS_POR_API;
-    const horasHomolog = /homolog|teste conjunto|testes/.test(textoBusca) ? CRONO_HORAS_HOMOLOG_BLOCO : Math.round(CRONO_HORAS_HOMOLOG_BLOCO / 2);
-    const totalHoras = horasDev + horasHomolog;
+    if (tipo === 'ANALISE') {
+      totalHoras = qtdApis * CRONO_HORAS_ANALISE_POR_API;
+      detalheTipo =
+        qtdApis +
+        ' API(s) × ' +
+        CRONO_HORAS_ANALISE_POR_API +
+        ' h/análise = ' +
+        totalHoras +
+        ' h (leitura de documentação).';
+    } else if (tipo === 'DEV') {
+      totalHoras = qtdApis * CRONO_HORAS_DEV_POR_API;
+      detalheTipo =
+        qtdApis +
+        ' API(s) × ' +
+        CRONO_HORAS_DEV_POR_API +
+        ' h = ' +
+        totalHoras +
+        ' h (desenvolvimento/integração Salesforce).';
+    } else if (tipo === 'TESTE') {
+      totalHoras = CRONO_HORAS_TESTE_BASE + qtdApis * CRONO_HORAS_TESTE_POR_API;
+      detalheTipo =
+        CRONO_HORAS_TESTE_BASE +
+        ' h base + ' +
+        qtdApis +
+        ' API(s) × ' +
+        CRONO_HORAS_TESTE_POR_API +
+        ' h = ' +
+        totalHoras +
+        ' h (testes conjuntos com backend).';
+    } else if (tipo === 'HOMOLOG') {
+      totalHoras = CRONO_HORAS_HOMOLOG_BLOCO + Math.min(qtdApis, 8) * 2;
+      detalheTipo =
+        CRONO_HORAS_HOMOLOG_BLOCO +
+        ' h (homologação negócio) + coordenação com escopo de APIs. Total ' +
+        totalHoras +
+        ' h.';
+    }
 
     const diasUteis = Math.max(1, Math.ceil(totalHoras / CRONO_HORAS_DIA_EQUIPE_DEV));
     let inicio = new Date(cursor.getTime());
@@ -717,28 +834,21 @@ function gerarDraftCronograma() {
 
     const durCalendario = diasEntreDatas_(inicio, termino) + 1;
 
-    const obsRacional =
-      'Racional macro: ' +
-      qtdApis +
-      ' API(s) × ' +
-      CRONO_HORAS_POR_API +
-      ' h = ' +
-      horasDev +
-      ' h (dev/integração); +' +
-      horasHomolog +
-      ' h homolog./testes = ' +
-      totalHoras +
-      ' h total. Capacidade considerada: 5 desenvolvedores full (40 h/dia útil em conjunto). ' +
+    const blocoRacional =
+      '\n\n--- Racional (automático) ---\n' +
+      detalheTipo +
+      ' Capacidade: 5 desenvolvedores full (40 h/dia útil). ' +
       'Equipe de referência: 1 Arquiteto, 1 Analista de Negócio, 5 Devs. ' +
-      'Premissa: conclusão do cronograma até 31/10/2026. ' +
-      (apis.length ? 'APIs: ' + apis.join(', ') + '. ' : '') +
-      (obsExistente ? '[Origem] ' + obsExistente : '');
+      'Premissa: execução até 31/10/2026. ' +
+      (apis.length ? 'APIs consideradas: ' + apis.join(', ') + '.' : '');
+
+    const textoObs = obsExistente ? obsExistente + blocoRacional : safeTrim_(blocoRacional.replace(/^\s+/, ''));
 
     sh.getRange(r + 1, colHor + 1).setValue(totalHoras);
     sh.getRange(r + 1, colIni + 1).setValue(inicio);
     sh.getRange(r + 1, colFim + 1).setValue(termino);
     sh.getRange(r + 1, colDur + 1).setValue(durCalendario);
-    sh.getRange(r + 1, colObs + 1).setValue(obsRacional);
+    sh.getRange(r + 1, colObs + 1).setValue(textoObs);
 
     cursor = addBusinessDays_(termino, 1);
     if (cursor.getTime() > CRONO_DATA_FIM.getTime()) {
@@ -746,7 +856,8 @@ function gerarDraftCronograma() {
     }
   }
 
-  sh.getRange(2, colIni + 1, data.length, colFim + 1).setNumberFormat('dd/mm/yyyy');
+  const lastRow = sh.getLastRow();
+  sh.getRange(2, colIni + 1, lastRow, colFim + 1).setNumberFormat('dd/mm/yyyy');
 }
 
 /** Soma dias úteis (seg–sex) a partir de start, incluindo start como dia 0 quando n=0 */
