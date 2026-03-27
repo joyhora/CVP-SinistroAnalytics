@@ -620,6 +620,31 @@ const CRONO_PESO_ENTREGA = 0;
 const CRONO_PESO_DEV = 60;
 const CRONO_PESO_TESTE = 8;
 const CRONO_PESO_HOMOLOG = 16;
+/** Capacidade mensal do time (h) — referência para calendarizar esforço */
+const CRONO_HORAS_MES_EQUIPE = 880;
+/** Dias úteis por mês (referência) para derivar h/dia útil = 880/22 */
+const CRONO_DIAS_UTEIS_MES_REF = 22;
+
+function horasPorDiaUtilEquipe_() {
+  return CRONO_HORAS_MES_EQUIPE / CRONO_DIAS_UTEIS_MES_REF;
+}
+
+/**
+ * Dias úteis por linha: ceil(h / (880/22)); se a soma exceder a janela, comprime proporcionalmente (Hamilton).
+ */
+function distribuirDiasUteisPorCapacidade_(itens, diasUteisDisponiveis, horasPorDia) {
+  const n = itens.length;
+  if (n === 0) return [];
+  if (diasUteisDisponiveis <= 0) return itens.map(() => 0);
+
+  const raw = itens.map(it => {
+    if (!it.totalHoras || it.totalHoras <= 0) return 0;
+    return Math.max(1, Math.ceil(it.totalHoras / horasPorDia));
+  });
+  let S = raw.reduce((a, b) => a + b, 0);
+  if (S <= diasUteisDisponiveis) return raw;
+  return distribuirInteirosProporcional_(raw, diasUteisDisponiveis);
+}
 
 /**
  * Localiza a aba de cronograma já existente (não cria aba nova).
@@ -879,8 +904,10 @@ function distribuirDiasUteisProporcional_(itens, diasUteisTotais) {
 
 /**
  * Gera/atualiza a aba **Draft Cronograma**: horas, datas e observação.
- * Escopo: **6.160 h** entre **01/04/2026** e **31/10/2026**; atividades com peso por tipo.
- * Linhas só de etapa (.1 … .7) recebem **soma de horas** e **início/fim** = união temporal das atividades da etapa.
+ * - **6.160 h** repartidas entre **etapas** pelo nº de **APIs distintas** (col. H) em cada etapa.
+ * - Dentro da etapa: peso do **tipo** × **APIs na linha**.
+ * - **Calendário:** referência **880 h/mês** (880/22 h por dia útil); comprime se a soma de dias exceder a janela.
+ * Linhas só de etapa: soma de horas e período agregado das atividades.
  */
 function gerarDraftCronograma() {
   const ss = SpreadsheetApp.getActive();
@@ -993,25 +1020,97 @@ function gerarDraftCronograma() {
     return;
   }
 
-  const somaPesos = itens.reduce((s, x) => s + x.peso, 0);
-  if (somaPesos <= 0) {
+  const apisPorEtapa = {};
+  for (let i = 0; i < itens.length; i++) {
+    const ep = itens[i].etapa;
+    if (!apisPorEtapa[ep]) apisPorEtapa[ep] = {};
+    for (let j = 0; j < itens[i].apis.length; j++) {
+      apisPorEtapa[ep][itens[i].apis[j]] = true;
+    }
+  }
+
+  const ordemEtapas = [];
+  const vistoEp = {};
+  for (let i = 0; i < itens.length; i++) {
+    const e = itens[i].etapa;
+    if (!vistoEp[e]) {
+      vistoEp[e] = true;
+      ordemEtapas.push(e);
+    }
+  }
+
+  const pesoEtapaLista = ordemEtapas.map(ep => Math.max(1, Object.keys(apisPorEtapa[ep] || {}).length));
+  const somaPesoEtapas = pesoEtapaLista.reduce((a, b) => a + b, 0);
+  if (somaPesoEtapas <= 0) {
     try {
-      SpreadsheetApp.getUi().alert(
-        'A soma dos pesos das linhas é zero (só há tarefas “entrega de APIs pelo backend”, peso 0 neste critério). Inclua linhas com análise, desenvolvimento, testes ou homologação.'
-      );
+      SpreadsheetApp.getUi().alert('Não foi possível calcular peso das etapas.');
     } catch (e) {
-      throw new Error('Soma de pesos zero.');
+      throw new Error('Peso etapas zero.');
     }
     return;
   }
 
-  const horasArr = distribuirInteirosProporcional_(
-    itens.map(x => x.peso),
-    CRONO_HORAS_TOTAL_PROJETO
-  );
-  for (let i = 0; i < itens.length; i++) itens[i].totalHoras = horasArr[i];
+  const horasPorEtapaArr = distribuirInteirosProporcional_(pesoEtapaLista, CRONO_HORAS_TOTAL_PROJETO);
+  const horasEtapa = {};
+  for (let i = 0; i < ordemEtapas.length; i++) {
+    horasEtapa[ordemEtapas[i]] = horasPorEtapaArr[i];
+  }
 
-  const diasPorItem = distribuirDiasUteisProporcional_(itens, diasUteisDisponiveis);
+  const porEtapa = {};
+  for (let i = 0; i < itens.length; i++) {
+    const it = itens[i];
+    if (!porEtapa[it.etapa]) porEtapa[it.etapa] = [];
+    porEtapa[it.etapa].push(it);
+  }
+
+  for (let ei = 0; ei < ordemEtapas.length; ei++) {
+    const ep = ordemEtapas[ei];
+    const grupo = porEtapa[ep];
+    const H = horasEtapa[ep];
+    const pesosLinha = grupo.map(function (it) {
+      return obterPesoTipoCronograma_(it.tipo) * Math.max(1, it.apis.length);
+    });
+    let totalPL = pesosLinha.reduce(function (a, b) {
+      return a + b;
+    }, 0);
+    let horasLinhas;
+    if (totalPL <= 0) {
+      const naoEntrega = grupo.filter(function (it) {
+        return it.tipo !== 'ENTREGA';
+      });
+      if (naoEntrega.length === 0) {
+        horasLinhas = grupo.map(function () {
+          return 0;
+        });
+      } else {
+        const sub = distribuirInteirosProporcional_(
+          naoEntrega.map(function () {
+            return 1;
+          }),
+          H
+        );
+        let k = 0;
+        horasLinhas = grupo.map(function (it) {
+          if (it.tipo === 'ENTREGA') return 0;
+          return sub[k++];
+        });
+      }
+    } else {
+      horasLinhas = distribuirInteirosProporcional_(pesosLinha, H);
+    }
+    for (let j = 0; j < grupo.length; j++) {
+      grupo[j].totalHoras = horasLinhas[j];
+    }
+  }
+
+  const horasPorDia = horasPorDiaUtilEquipe_();
+  const rawDiasSoma = itens.reduce(function (s, it) {
+    if (!it.totalHoras || it.totalHoras <= 0) return s;
+    return s + Math.max(1, Math.ceil(it.totalHoras / horasPorDia));
+  }, 0);
+  const comprimiuPrazo = rawDiasSoma > diasUteisDisponiveis;
+
+  const diasPorItem = distribuirDiasUteisPorCapacidade_(itens, diasUteisDisponiveis, horasPorDia);
   let cursor = new Date(dataInicioProjeto.getTime());
   const agregadoEtapa = {};
 
@@ -1045,23 +1144,34 @@ function gerarDraftCronograma() {
 
     const durCalendario = diasEntreDatas_(inicio, termino) + 1;
 
+    const nApisEtapa = Object.keys(apisPorEtapa[item.etapa] || {}).length;
     const blocoRacional =
       '\n\n--- Racional (automático) ---\n' +
-      'Janela ' +
+      'Escopo ' +
+      CRONO_HORAS_TOTAL_PROJETO +
+      ' h (janela ' +
       fmtPeriodoInicio +
       '–' +
       fmtFimProjeto +
-      '; ' +
-      CRONO_HORAS_TOTAL_PROJETO +
-      ' h no escopo. Esta linha: ' +
+      '). Etapa ' +
+      item.etapa +
+      ': ' +
+      nApisEtapa +
+      ' API(s) distinta(s) na coluna H (peso do épico). Esta linha: ' +
       item.totalHoras +
       ' h — ' +
       item.rotuloTipo.replace(/\.$/, '') +
       '. ' +
-      'As horas foram alocadas pelo tipo de atividade em relação às outras linhas; o cronograma segue a ordem da planilha ao longo dos ' +
-      diasUteisDisponiveis +
-      ' dias úteis. ' +
-      (item.apis.length ? 'APIs: ' + item.apis.join(', ') + '.' : '');
+      'Dentro da etapa, a carga segue o tipo de trabalho e a quantidade de APIs listadas na linha. ' +
+      'Calendário: capacidade de referência ' +
+      CRONO_HORAS_MES_EQUIPE +
+      ' h/mês (≈' +
+      horasPorDia.toFixed(1).replace('.', ',') +
+      ' h por dia útil). ' +
+      (comprimiuPrazo
+        ? 'Atenção: o esforço em dias úteis excederia a janela; as durações foram ajustadas proporcionalmente para caber no período. '
+        : '') +
+      (item.apis.length ? 'APIs nesta linha: ' + item.apis.join(', ') + '.' : '');
 
     const textoObs = item.obsExistente ? item.obsExistente + blocoRacional : safeTrim_(blocoRacional.replace(/^\s+/, ''));
 
@@ -1094,8 +1204,21 @@ function gerarDraftCronograma() {
     }
   }
 
+  if (comprimiuPrazo) {
+    try {
+      SpreadsheetApp.getUi().alert(
+        'O esforço em dias úteis (capacidade ' +
+          CRONO_HORAS_MES_EQUIPE +
+          ' h/mês) ultrapassava a janela até 31/10/2026. As durações foram comprimidas proporcionalmente; valide o encaixe com o conselho.'
+      );
+    } catch (e) {
+      /* headless */
+    }
+  }
+
   const lastRow = sh.getLastRow();
   sh.getRange(2, colIni + 1, lastRow, colFim + 1).setNumberFormat('dd/mm/yyyy');
+  sh.getRange(2, colDur + 1, lastRow, colDur + 1).setNumberFormat('0');
 
   for (let r = 1; r < data.length; r++) {
     const nomeTitulo = safeTrim_(data[r][colTask]);
@@ -1109,9 +1232,13 @@ function gerarDraftCronograma() {
     sh.getRange(r + 1, colFim + 1).setValue(agg.fim);
     sh.getRange(r + 1, colDur + 1).setValue(diasEntreDatas_(agg.ini, agg.fim) + 1);
     const obsTit = safeTrim_(String(data[r][colObs] || ''));
+    const nApisTit = Object.keys(apisPorEtapa[epTit] || {}).length;
     const blocoEtapa =
       '\n\n--- Agrupamento etapa ---\n' +
-      'Horas e datas da linha = soma das atividades e do primeiro ao último dia útil desta etapa.';
+      agg.horas +
+      ' h (soma das atividades). ' +
+      nApisTit +
+      ' API(s) distinta(s) na coluna H nesta etapa. Início e fim = primeira e última atividade.';
     sh.getRange(r + 1, colObs + 1).setValue(obsTit ? obsTit + blocoEtapa : safeTrim_(blocoEtapa.replace(/^\s+/, '')));
   }
 }
