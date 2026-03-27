@@ -607,19 +607,19 @@ const SHEET_DRAFT_CRONOGRAMA_PRI = 'Draft Cronograma';
 const SHEET_DRAFT_CRONOGRAMA_ALT = 'Draft-Cronograma';
 /** Data limite do cronograma (31/10/2026) */
 const CRONO_DATA_FIM = new Date(2026, 9, 31);
-/** Início da fase de desenvolvimento (após planejamento típico até 30/09/2026) */
-const CRONO_DATA_INICIO_DEV = new Date(2026, 9, 1); // 01/10/2026
-/** Horas por API – análise de documentação */
-const CRONO_HORAS_ANALISE_POR_API = 8;
-/** Horas por API – desenvolvimento Salesforce */
-const CRONO_HORAS_DEV_POR_API = 16;
-/** Horas base – testes em conjunto com backend (+ complemento por API) */
-const CRONO_HORAS_TESTE_BASE = 24;
-const CRONO_HORAS_TESTE_POR_API = 4;
-/** Horas – homologação negócio (bloco) */
-const CRONO_HORAS_HOMOLOG_BLOCO = 32;
-/** Capacidade diária: 5 desenvolvedores × 8 h */
-const CRONO_HORAS_DIA_EQUIPE_DEV = 40;
+/** Início do projeto (01/04/2026) — piso se não houver datas de planejamento na planilha */
+const CRONO_DATA_INICIO_PROJETO = new Date(2026, 3, 1);
+/** Total de horas do escopo a distribuir entre as linhas classificadas */
+const CRONO_HORAS_TOTAL_PROJETO = 6160;
+/**
+ * Pesos relativos por tipo de atividade (repartição das 6.160 h).
+ * Entrega pelo backend = 0 (sem carga alocada neste critério).
+ */
+const CRONO_PESO_ANALISE = 8;
+const CRONO_PESO_ENTREGA = 0;
+const CRONO_PESO_DEV = 60;
+const CRONO_PESO_TESTE = 8;
+const CRONO_PESO_HOMOLOG = 16;
 
 /**
  * Localiza a aba de cronograma já existente (não cria aba nova).
@@ -631,8 +631,12 @@ function obterAbaDraftCronograma_(ss) {
 }
 
 /**
- * Classifica apenas as 4 atividades desejadas (normalizado sem acento).
- * Retorna: ANALISE | DEV | TESTE | HOMOLOG | null
+ * Classifica as 5 atividades do fluxo (normalizado sem acento).
+ * Retorna: ANALISE | ENTREGA | DEV | TESTE | HOMOLOG | null
+ *
+ * Etapas esperadas no cronograma (WBS): Receber Demanda, Gerenciador de Documentos,
+ * Analisar, Subsidiar Análise, Concluir Sinistro, Alçada Superior, Regras Gerais —
+ * cada uma com as mesmas atividades-tipo abaixo, na ordem das linhas da planilha.
  */
 function classificarAtividadeCronograma_(nomeTarefa) {
   const n = safeTrim_(nomeTarefa)
@@ -640,18 +644,105 @@ function classificarAtividadeCronograma_(nomeTarefa) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
   if (!n) return null;
-  // Homologação negócio (antes de "teste" genérico)
   if (/homologa/.test(n)) return 'HOMOLOG';
-  // Testes em conjunto com backend
-  if (/teste.*conjunto|testes.*conjunto/.test(n) && /backend|api/.test(n)) return 'TESTE';
   if (/teste.*conjunto|testes.*conjunto/.test(n)) return 'TESTE';
-  // Desenvolvimento Salesforce
-  if (/desenvolvimento/.test(n) && /salesforce|api/.test(n)) return 'DEV';
+  if (/desenvolvimento/.test(n) && /salesforce|api|dev/.test(n)) return 'DEV';
   if (/desenvolvimento.*salesforce/.test(n)) return 'DEV';
-  // Análise documentação / Análise documento
-  if (/analise/.test(n) && /document|documento|api/.test(n)) return 'ANALISE';
-  if (/analise.*document/.test(n)) return 'ANALISE';
+  if (/entrega/.test(n) && (/backend|api/.test(n) || /pelo backend/.test(n))) return 'ENTREGA';
+  if (/entrega.*api|api.*entrega/.test(n)) return 'ENTREGA';
+  // "analise" como palavra (evita confundir o título da etapa ".3 Analisar" com análise de doc)
+  if (/\banalise\b/.test(n) && /document|documento|api/.test(n)) return 'ANALISE';
+  if (/\banalise\b.*document/.test(n)) return 'ANALISE';
   return null;
+}
+
+function obterPesoTipoCronograma_(tipo) {
+  if (tipo === 'ANALISE') return CRONO_PESO_ANALISE;
+  if (tipo === 'ENTREGA') return CRONO_PESO_ENTREGA;
+  if (tipo === 'DEV') return CRONO_PESO_DEV;
+  if (tipo === 'TESTE') return CRONO_PESO_TESTE;
+  if (tipo === 'HOMOLOG') return CRONO_PESO_HOMOLOG;
+  return 0;
+}
+
+/** Uma linha curta para o racional (tipo de trabalho). */
+function rotuloTipoCronograma_(tipo) {
+  if (tipo === 'ANALISE') return 'Análise de documentação das APIs.';
+  if (tipo === 'ENTREGA') return 'Entrega das APIs pelo backend.';
+  if (tipo === 'DEV') return 'Desenvolvimento Salesforce (APIs).';
+  if (tipo === 'TESTE') return 'Testes em conjunto com o backend (APIs).';
+  if (tipo === 'HOMOLOG') return 'Homologação com o negócio.';
+  return '';
+}
+
+/** WBS no início da célula: .3, 3., 3 - … → 1..7 */
+function extrairNumeroEtapaCronograma_(nomeTarefa) {
+  const n = safeTrim_(nomeTarefa)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (!n) return null;
+  const m = n.match(/^\s*\.?\s*([1-7])[\.\)\s:-]/);
+  if (m) return parseInt(m[1], 10);
+  const m2 = n.match(/^\s*([1-7])\s*[\.\)]\s/);
+  if (m2) return parseInt(m2[1], 10);
+  return null;
+}
+
+/** Etapa pelo nome (linhas só de título, sem atividade classificada). */
+function detectarEtapaPorPalavra_(nomeTarefa) {
+  const n = safeTrim_(nomeTarefa)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (!n) return null;
+  if (/regras\s+gerais/.test(n)) return 7;
+  if (/alcada\s+superior|aprovar\s+processo/.test(n)) return 6;
+  if (/concluir\s+sinistro/.test(n)) return 5;
+  if (/subsidiar\s+analise|subsidiar/.test(n)) return 4;
+  if (/gerenciador(\s+de)?\s+documentos/.test(n)) return 2;
+  if (/receber\s+demanda|demanda\s+de\s+sinistro/.test(n)) return 1;
+  if (/\banalisar\b/.test(n) && !/\banalise\b/.test(n) && !/document/.test(n)) return 3;
+  return null;
+}
+
+/** Linha de título de etapa (não é uma das cinco atividades). */
+function ehTituloEtapaSemAtividade_(nomeTarefa) {
+  if (classificarAtividadeCronograma_(nomeTarefa)) return false;
+  return extrairNumeroEtapaCronograma_(nomeTarefa) !== null || detectarEtapaPorPalavra_(nomeTarefa) !== null;
+}
+
+/** Etapa da linha: número WBS, palavras-chave da etapa ou último título visto. */
+function resolverEtapaLinhaCronograma_(nomeTarefa, etapaCursor) {
+  const ex = extrairNumeroEtapaCronograma_(nomeTarefa);
+  if (ex !== null) return ex;
+  const pal = detectarEtapaPorPalavra_(nomeTarefa);
+  if (pal !== null) return pal;
+  if (etapaCursor > 0) return etapaCursor;
+  return 1;
+}
+
+/**
+ * Reparte um inteiro (ex.: 6.160 h) proporcionalmente a pesos, soma exata = alvo.
+ * Pesos com valor 0 recebem 0 (ex.: entrega de APIs com peso 0 no critério).
+ */
+function distribuirInteirosProporcional_(pesos, alvo) {
+  const n = pesos.length;
+  if (n === 0) return [];
+  const totalP = pesos.reduce((a, b) => a + b, 0);
+  if (totalP <= 0) {
+    return pesos.map(() => 0);
+  }
+  const raw = pesos.map(p => (p / totalP) * alvo);
+  const floors = raw.map(v => Math.floor(v));
+  let soma = floors.reduce((a, b) => a + b, 0);
+  let rem = alvo - soma;
+  const ordem = raw
+    .map((v, i) => ({ i, r: v - Math.floor(v) }))
+    .sort((a, b) => b.r - a.r);
+  const out = floors.slice();
+  for (let k = 0; k < rem; k++) out[ordem[k].i]++;
+  return out;
 }
 
 /**
@@ -711,12 +802,85 @@ function detectarColunasCronograma_(headerRow) {
 }
 
 /**
- * Gera/atualiza a aba **Draft Cronograma** (existente): preenche B/C/D/G e acrescenta racional em Observação.
- * Somente linhas cujo Task Name corresponde a:
- * - Análise documentação das APIs (Análise documento)
- * - Desenvolvimento Salesforce
- * - Testes em conjunto com backend
- * - Homologação negócio
+ * Primeira linha com uma das 5 atividades do fluxo; linhas acima = planejamento.
+ * Usa a maior data em "Término" antes dessa linha + 1 dia útil, com piso em 01/04/2026.
+ */
+function inferirDataInicioFaseDev_(data, cols) {
+  const colTask = cols.colTask;
+  const colFim = cols.colFim;
+  let firstDevIdx = -1;
+  for (let r = 1; r < data.length; r++) {
+    const nome = safeTrim_(data[r][colTask]);
+    if (classificarAtividadeCronograma_(nome)) {
+      firstDevIdx = r;
+      break;
+    }
+  }
+  if (firstDevIdx < 0) return new Date(CRONO_DATA_INICIO_PROJETO.getTime());
+
+  let maxD = null;
+  for (let r = 1; r < firstDevIdx; r++) {
+    const v = data[r][colFim];
+    if (v instanceof Date && !isNaN(v.getTime())) {
+      if (!maxD || v.getTime() > maxD.getTime()) maxD = v;
+    }
+  }
+  if (!maxD) return new Date(CRONO_DATA_INICIO_PROJETO.getTime());
+
+  const next = addBusinessDays_(maxD, 1);
+  const padrao = new Date(CRONO_DATA_INICIO_PROJETO.getTime());
+  return next.getTime() > padrao.getTime() ? next : padrao;
+}
+
+/** Quantidade de dias úteis entre duas datas (inclusive). */
+function contarDiasUteisInclusive_(inicio, fim) {
+  if (inicio > fim) return 0;
+  let n = 0;
+  const cur = new Date(inicio.getTime());
+  cur.setHours(12, 0, 0, 0);
+  const lim = new Date(fim.getTime());
+  lim.setHours(12, 0, 0, 0);
+  while (cur <= lim) {
+    const wd = cur.getDay();
+    if (wd !== 0 && wd !== 6) n++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return n;
+}
+
+/**
+ * Distribui dias úteis entre atividades proporcionalmente ao esforço (horas),
+ * para preencher todo o período [dataInicio, CRONO_DATA_FIM] com visão de evolução (ordem das linhas).
+ * Usa maior resto (Hamilton) para a soma bater exatamente com diasUteisTotais.
+ */
+function distribuirDiasUteisProporcional_(itens, diasUteisTotais) {
+  const n = itens.length;
+  if (n === 0) return [];
+  if (diasUteisTotais <= 0) return itens.map(() => 0);
+
+  const totalHoras = itens.reduce((s, x) => s + x.totalHoras, 0);
+  if (totalHoras <= 0) {
+    const base = Math.floor(diasUteisTotais / n);
+    let rem = diasUteisTotais - base * n;
+    return itens.map((_, i) => base + (i < rem ? 1 : 0));
+  }
+
+  const quotas = itens.map(x => (x.totalHoras / totalHoras) * diasUteisTotais);
+  const floors = quotas.map(q => Math.floor(q));
+  let soma = floors.reduce((a, b) => a + b, 0);
+  let rem = diasUteisTotais - soma;
+  const ordem = quotas
+    .map((q, i) => ({ i, r: q - Math.floor(q) }))
+    .sort((a, b) => b.r - a.r);
+  const dias = floors.slice();
+  for (let k = 0; k < rem; k++) dias[ordem[k].i]++;
+  return dias;
+}
+
+/**
+ * Gera/atualiza a aba **Draft Cronograma**: horas, datas e observação.
+ * Escopo: **6.160 h** entre **01/04/2026** e **31/10/2026**; atividades com peso por tipo.
+ * Linhas só de etapa (.1 … .7) recebem **soma de horas** e **início/fim** = união temporal das atividades da etapa.
  */
 function gerarDraftCronograma() {
   const ss = SpreadsheetApp.getActive();
@@ -755,16 +919,44 @@ function gerarDraftCronograma() {
   const colObs = cols.colObs;
   const colApi = cols.colApi;
 
-  let cursor = new Date(CRONO_DATA_INICIO_DEV.getTime());
+  const dataInicioProjeto = inferirDataInicioFaseDev_(data, cols);
+  const diasUteisDisponiveis = contarDiasUteisInclusive_(dataInicioProjeto, CRONO_DATA_FIM);
+
+  if (diasUteisDisponiveis < 1) {
+    try {
+      SpreadsheetApp.getUi().alert('A data de início da fase dev está após 31/10/2026. Ajuste datas de planejamento na planilha.');
+    } catch (e) {
+      throw new Error('Janela de cronograma inválida.');
+    }
+    return;
+  }
+
   const apiRegex = /\b(API-\d+|BK\d+)\b/gi;
+  const itens = [];
+  let etapaCursor = 0;
 
   for (let r = 1; r < data.length; r++) {
     const row = data[r];
     const nomeTarefa = safeTrim_(row[colTask]);
     if (!nomeTarefa) continue;
 
+    if (ehTituloEtapaSemAtividade_(nomeTarefa)) {
+      const ex = extrairNumeroEtapaCronograma_(nomeTarefa);
+      if (ex !== null) etapaCursor = ex;
+      else {
+        const p = detectarEtapaPorPalavra_(nomeTarefa);
+        if (p !== null) etapaCursor = p;
+      }
+      continue;
+    }
+
     const tipo = classificarAtividadeCronograma_(nomeTarefa);
     if (!tipo) continue;
+
+    const etapa = resolverEtapaLinhaCronograma_(nomeTarefa, etapaCursor);
+    if (extrairNumeroEtapaCronograma_(nomeTarefa) !== null) {
+      etapaCursor = extrairNumeroEtapaCronograma_(nomeTarefa);
+    }
 
     const textoApiCol = colApi >= 0 ? safeTrim_(row[colApi] || '') : '';
     const obsExistente = safeTrim_(row[colObs] || '');
@@ -777,58 +969,77 @@ function gerarDraftCronograma() {
       const cod = m[1].toUpperCase();
       if (apis.indexOf(cod) === -1) apis.push(cod);
     }
-    const qtdApis = Math.max(apis.length, 1);
 
-    let totalHoras = 0;
-    let detalheTipo = '';
+    const peso = obterPesoTipoCronograma_(tipo);
+    itens.push({
+      rowIndex: r,
+      etapa: etapa,
+      tipo: tipo,
+      peso: peso,
+      rotuloTipo: rotuloTipoCronograma_(tipo),
+      apis: apis,
+      obsExistente: obsExistente
+    });
+  }
 
-    if (tipo === 'ANALISE') {
-      totalHoras = qtdApis * CRONO_HORAS_ANALISE_POR_API;
-      detalheTipo =
-        qtdApis +
-        ' API(s) × ' +
-        CRONO_HORAS_ANALISE_POR_API +
-        ' h/análise = ' +
-        totalHoras +
-        ' h (leitura de documentação).';
-    } else if (tipo === 'DEV') {
-      totalHoras = qtdApis * CRONO_HORAS_DEV_POR_API;
-      detalheTipo =
-        qtdApis +
-        ' API(s) × ' +
-        CRONO_HORAS_DEV_POR_API +
-        ' h = ' +
-        totalHoras +
-        ' h (desenvolvimento/integração Salesforce).';
-    } else if (tipo === 'TESTE') {
-      totalHoras = CRONO_HORAS_TESTE_BASE + qtdApis * CRONO_HORAS_TESTE_POR_API;
-      detalheTipo =
-        CRONO_HORAS_TESTE_BASE +
-        ' h base + ' +
-        qtdApis +
-        ' API(s) × ' +
-        CRONO_HORAS_TESTE_POR_API +
-        ' h = ' +
-        totalHoras +
-        ' h (testes conjuntos com backend).';
-    } else if (tipo === 'HOMOLOG') {
-      totalHoras = CRONO_HORAS_HOMOLOG_BLOCO + Math.min(qtdApis, 8) * 2;
-      detalheTipo =
-        CRONO_HORAS_HOMOLOG_BLOCO +
-        ' h (homologação negócio) + coordenação com escopo de APIs. Total ' +
-        totalHoras +
-        ' h.';
+  if (itens.length === 0) {
+    try {
+      SpreadsheetApp.getUi().alert(
+        'Nenhuma linha reconhecida. Use os nomes das cinco atividades (análise documentação, entrega APIs pelo backend, desenvolvimento Salesforce, testes com backend, homologação).'
+      );
+    } catch (e) {
+      /* headless */
     }
+    return;
+  }
 
-    const diasUteis = Math.max(1, Math.ceil(totalHoras / CRONO_HORAS_DIA_EQUIPE_DEV));
-    let inicio = new Date(cursor.getTime());
-    let termino = addBusinessDays_(inicio, diasUteis - 1);
+  const somaPesos = itens.reduce((s, x) => s + x.peso, 0);
+  if (somaPesos <= 0) {
+    try {
+      SpreadsheetApp.getUi().alert(
+        'A soma dos pesos das linhas é zero (só há tarefas “entrega de APIs pelo backend”, peso 0 neste critério). Inclua linhas com análise, desenvolvimento, testes ou homologação.'
+      );
+    } catch (e) {
+      throw new Error('Soma de pesos zero.');
+    }
+    return;
+  }
 
-    if (termino.getTime() > CRONO_DATA_FIM.getTime()) {
-      termino = new Date(CRONO_DATA_FIM.getTime());
-      inicio = subtractBusinessDays_(termino, diasUteis - 1);
-      if (inicio.getTime() < CRONO_DATA_INICIO_DEV.getTime()) {
-        inicio = new Date(CRONO_DATA_INICIO_DEV.getTime());
+  const horasArr = distribuirInteirosProporcional_(
+    itens.map(x => x.peso),
+    CRONO_HORAS_TOTAL_PROJETO
+  );
+  for (let i = 0; i < itens.length; i++) itens[i].totalHoras = horasArr[i];
+
+  const diasPorItem = distribuirDiasUteisProporcional_(itens, diasUteisDisponiveis);
+  let cursor = new Date(dataInicioProjeto.getTime());
+  const agregadoEtapa = {};
+
+  const fmtPeriodoInicio =
+    ('0' + dataInicioProjeto.getDate()).slice(-2) +
+    '/' +
+    ('0' + (dataInicioProjeto.getMonth() + 1)).slice(-2) +
+    '/' +
+    dataInicioProjeto.getFullYear();
+  const fmtFimProjeto =
+    ('0' + CRONO_DATA_FIM.getDate()).slice(-2) +
+    '/' +
+    ('0' + (CRONO_DATA_FIM.getMonth() + 1)).slice(-2) +
+    '/' +
+    CRONO_DATA_FIM.getFullYear();
+
+  for (let k = 0; k < itens.length; k++) {
+    const item = itens[k];
+    const dUteis = diasPorItem[k];
+    const r = item.rowIndex;
+    const inicio = new Date(cursor.getTime());
+    let termino;
+    if (dUteis <= 0) {
+      termino = new Date(inicio.getTime());
+    } else {
+      termino = addBusinessDays_(inicio, dUteis - 1);
+      if (termino.getTime() > CRONO_DATA_FIM.getTime()) {
+        termino = new Date(CRONO_DATA_FIM.getTime());
       }
     }
 
@@ -836,28 +1047,73 @@ function gerarDraftCronograma() {
 
     const blocoRacional =
       '\n\n--- Racional (automático) ---\n' +
-      detalheTipo +
-      ' Capacidade: 5 desenvolvedores full (40 h/dia útil). ' +
-      'Equipe de referência: 1 Arquiteto, 1 Analista de Negócio, 5 Devs. ' +
-      'Premissa: execução até 31/10/2026. ' +
-      (apis.length ? 'APIs consideradas: ' + apis.join(', ') + '.' : '');
+      'Janela ' +
+      fmtPeriodoInicio +
+      '–' +
+      fmtFimProjeto +
+      '; ' +
+      CRONO_HORAS_TOTAL_PROJETO +
+      ' h no escopo. Esta linha: ' +
+      item.totalHoras +
+      ' h — ' +
+      item.rotuloTipo.replace(/\.$/, '') +
+      '. ' +
+      'As horas foram alocadas pelo tipo de atividade em relação às outras linhas; o cronograma segue a ordem da planilha ao longo dos ' +
+      diasUteisDisponiveis +
+      ' dias úteis. ' +
+      (item.apis.length ? 'APIs: ' + item.apis.join(', ') + '.' : '');
 
-    const textoObs = obsExistente ? obsExistente + blocoRacional : safeTrim_(blocoRacional.replace(/^\s+/, ''));
+    const textoObs = item.obsExistente ? item.obsExistente + blocoRacional : safeTrim_(blocoRacional.replace(/^\s+/, ''));
 
-    sh.getRange(r + 1, colHor + 1).setValue(totalHoras);
+    item.inicio = inicio;
+    item.termino = termino;
+
+    const ep = item.etapa;
+    if (!agregadoEtapa[ep]) {
+      agregadoEtapa[ep] = { horas: 0, ini: null, fim: null };
+    }
+    agregadoEtapa[ep].horas += item.totalHoras;
+    if (!agregadoEtapa[ep].ini || inicio.getTime() < agregadoEtapa[ep].ini.getTime()) {
+      agregadoEtapa[ep].ini = new Date(inicio.getTime());
+    }
+    if (!agregadoEtapa[ep].fim || termino.getTime() > agregadoEtapa[ep].fim.getTime()) {
+      agregadoEtapa[ep].fim = new Date(termino.getTime());
+    }
+
+    sh.getRange(r + 1, colHor + 1).setValue(item.totalHoras);
     sh.getRange(r + 1, colIni + 1).setValue(inicio);
     sh.getRange(r + 1, colFim + 1).setValue(termino);
     sh.getRange(r + 1, colDur + 1).setValue(durCalendario);
     sh.getRange(r + 1, colObs + 1).setValue(textoObs);
 
-    cursor = addBusinessDays_(termino, 1);
-    if (cursor.getTime() > CRONO_DATA_FIM.getTime()) {
-      cursor = new Date(CRONO_DATA_FIM.getTime());
+    if (dUteis > 0) {
+      cursor = addBusinessDays_(termino, 1);
+      if (cursor.getTime() > CRONO_DATA_FIM.getTime()) {
+        cursor = new Date(CRONO_DATA_FIM.getTime());
+      }
     }
   }
 
   const lastRow = sh.getLastRow();
   sh.getRange(2, colIni + 1, lastRow, colFim + 1).setNumberFormat('dd/mm/yyyy');
+
+  for (let r = 1; r < data.length; r++) {
+    const nomeTitulo = safeTrim_(data[r][colTask]);
+    if (!nomeTitulo || !ehTituloEtapaSemAtividade_(nomeTitulo)) continue;
+    let epTit = extrairNumeroEtapaCronograma_(nomeTitulo);
+    if (epTit === null) epTit = detectarEtapaPorPalavra_(nomeTitulo);
+    if (epTit === null || !agregadoEtapa[epTit]) continue;
+    const agg = agregadoEtapa[epTit];
+    sh.getRange(r + 1, colHor + 1).setValue(agg.horas);
+    sh.getRange(r + 1, colIni + 1).setValue(agg.ini);
+    sh.getRange(r + 1, colFim + 1).setValue(agg.fim);
+    sh.getRange(r + 1, colDur + 1).setValue(diasEntreDatas_(agg.ini, agg.fim) + 1);
+    const obsTit = safeTrim_(String(data[r][colObs] || ''));
+    const blocoEtapa =
+      '\n\n--- Agrupamento etapa ---\n' +
+      'Horas e datas da linha = soma das atividades e do primeiro ao último dia útil desta etapa.';
+    sh.getRange(r + 1, colObs + 1).setValue(obsTit ? obsTit + blocoEtapa : safeTrim_(blocoEtapa.replace(/^\s+/, '')));
+  }
 }
 
 /** Soma dias úteis (seg–sex) a partir de start, incluindo start como dia 0 quando n=0 */
